@@ -1,0 +1,14 @@
+{
+  "name": "tjs",
+  "version": "0.0.0",
+  "description": "Sound typed subset of javascript",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Viktor Fröberg",
+  "license": "MIT",
+  "dependencies": {
+    "meriyah": "^6.0.6"
+  }
+}

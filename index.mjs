@@ -1,0 +1,169 @@
+// Minimal Hindley-Milner Inference: Only Literals + Imports/Exports
+import fs from 'fs/promises';
+import path from 'path';
+import { parseModule } from 'meriyah';
+import { infer, typeScheme, showType } from './type-inference.mjs';
+
+// --- Import/Export Analysis ---
+function extractImports(ast) {
+  const imports = [];
+  for (const node of ast.body) {
+    if (node.type === 'ImportDeclaration') {
+      imports.push({
+        source: node.source.value,
+        specifiers: node.specifiers.map(spec => ({
+          local: spec.local.name,
+          imported: spec.imported ? spec.imported.name : 'default',
+        }))
+      });
+    }
+  }
+  return imports;
+}
+
+function extractExports(ast) {
+  const exports = {};
+  for (const node of ast.body) {
+    if (node.type === 'ExportNamedDeclaration') {
+      const decl = node.declaration;
+      if (decl.type === 'VariableDeclaration') {
+        for (const d of decl.declarations) {
+          if (d.id.type === 'Identifier') {
+            exports[d.id.name] = d.init;
+          }
+        }
+      }
+    }
+  }
+  return exports;
+}
+
+function extractTopLevelBindings(ast) {
+  const bindings = {};
+  for (const node of ast.body) {
+    if (node.type === 'VariableDeclaration') {
+      for (const d of node.declarations) {
+        if (d.id.type === 'Identifier') {
+          bindings[d.id.name] = d.init;
+        }
+      }
+    } else if (node.type === 'FunctionDeclaration') {
+      if (node.id && node.id.type === 'Identifier') {
+        bindings[node.id.name] = node;
+      }
+    }
+    else if (node.type === 'ExportNamedDeclaration') {
+      const decl = node.declaration;
+      if (decl.type === 'VariableDeclaration') {
+        for (const d of decl.declarations) {
+          if (d.id.type === 'Identifier') {
+            bindings[d.id.name] = d.init;
+          }
+        }
+      }
+    }
+    else if (node.type === 'ExportDefaultDeclaration') {
+      bindings['default'] = node.declaration;
+    }
+    else if (node.type === 'ImportDeclaration') {
+      // Ignore
+    }
+    else {
+      throw new Error(`Unsupported top-level node type: ${node.type}`);
+    }
+  }
+  return bindings;
+}
+
+function buildDependencyGraph(files) {
+  const graph = new Map();
+  for (const [filePath, ast] of files) {
+    const imports = extractImports(ast);
+    const dependencies = imports.map(imp =>
+      path.resolve(path.dirname(filePath), imp.source)
+    );
+    graph.set(filePath, dependencies);
+  }
+  return graph;
+}
+
+function topologicalSort(graph) {
+  const visited = new Set();
+  const onStack = new Set();
+  const sorted = [];
+
+  function visit(node, ancestors = []) {
+    if (visited.has(node)) return;
+    if (onStack.has(node)) {
+      const cycle = [...ancestors, node].join(' -> ');
+      throw new Error(`Cyclic import detected: ${cycle}`);
+    }
+
+    onStack.add(node);
+    const deps = graph.get(node) || [];
+    for (const dep of deps) {
+      visit(dep, [...ancestors, node]);
+    }
+    onStack.delete(node);
+    visited.add(node);
+    sorted.push(node);
+  }
+
+  for (const node of graph.keys()) {
+    visit(node);
+  }
+
+  return sorted;
+}
+
+async function parseFile(filePath) {
+  const code = await fs.readFile(filePath, 'utf8');
+  const ast = parseModule(code, { module: true });
+  return { ast, code };
+}
+
+// TODO: Name resolution?
+
+// --- Type Checking Driver ---
+const globalModuleTypes = new Map();
+
+async function processFiles(entryDir) {
+  const entries = await fs.readdir(entryDir);
+  const fileData = await Promise.all(entries
+    .filter(f => f.endsWith('.js'))
+    .map(async f => {
+      const full = path.resolve(entryDir, f);
+      const { ast } = await parseFile(full);
+      return [full, ast];
+    }));
+
+  const fileMap = new Map(fileData);
+  const depGraph = buildDependencyGraph(fileMap);
+  const sortedPaths = topologicalSort(depGraph);
+
+  for (const filePath of sortedPaths) {
+    const ast = fileMap.get(filePath);
+    const imports = extractImports(ast);
+    const importedEnv = {};
+    for (const imp of imports) {
+      const resolved = path.resolve(path.dirname(filePath), imp.source);
+      const modEnv = globalModuleTypes.get(resolved);
+      if (!modEnv) throw new Error(`Missing module: ${resolved}`);
+      for (const spec of imp.specifiers) {
+        const sch = modEnv[spec.imported];
+        if (!sch) throw new Error(`Missing export: ${spec.imported} from ${resolved}`);
+        importedEnv[spec.local] = sch;
+      }
+    }
+
+    const topLevelBindings = extractTopLevelBindings(ast);
+    const env = { ...importedEnv };
+    for (const [name, expr] of Object.entries(topLevelBindings)) {
+      const typ = infer(expr, env, {});
+      env[name] = typeScheme(typ, []);
+    }
+    globalModuleTypes.set(filePath, env);
+  }
+}
+
+processFiles('./project').catch(console.error);
