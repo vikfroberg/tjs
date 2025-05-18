@@ -211,12 +211,19 @@ export function infer(node, env, subst) {
       return tBoolean;
     }
 
-    case 'ArrowFunctionExpression':
+    case 'ArrowFunctionExpression': 
     case 'FunctionDeclaration': {
-      const paramTypes = node.params.map(() => freshTypeVar());
-      let newEnv = env;
+      const paramTypes = node.params.map(param => {
+        if (param.type === 'AssignmentPattern') {
+          return infer(param.right, env, subst);
+        } else {
+        return freshTypeVar()
+        }
+      });
+      let newEnv = node.type === 'FunctionDeclaration' ? extendEnv(env, node.id.name, typeScheme(tFunN(paramTypes, freshTypeVar()))) : env;
       node.params.forEach((param, i) => {
-        newEnv = extendEnv(newEnv, param.name, typeScheme(paramTypes[i]));
+        const name = param.type === 'AssignmentPattern' ? param.left.name : param.name;
+        newEnv = extendEnv(newEnv, name, typeScheme(paramTypes[i]));
       });
       const bodyType = infer(node.body, newEnv, subst);
       return tFunN(paramTypes.map(t => applySubst(subst, t)), bodyType);
@@ -229,6 +236,9 @@ export function infer(node, env, subst) {
     case 'ObjectExpression': {
       const fieldTypes = {};
       if (node.properties.length === 0) return tRecord({});
+      if (node.properties.filter(p => p.type === 'SpreadElement').length > 1) {
+        throw new Error('Only one spread allowed in object literal');
+      }
       const [first, ...rest] = node.properties;
       if (first.type === 'SpreadElement') {
         const baseType = infer(node.properties[0].argument, env, subst);
@@ -302,9 +312,9 @@ export function infer(node, env, subst) {
       return { tag: 'expression' };
     }
 
+    // TODO: Hacky, how do we handle classes in js? Eg Set, Array, Map, etc.
     case 'NewExpression': {
-      // console.log(node);
-      return { tag: 'new-expression' };
+      return infer(node.arguments[0], env, subst);
     }
 
     case 'ForOfStatement': {
@@ -341,12 +351,37 @@ export function infer(node, env, subst) {
     }
 
     case 'ArrayExpression': {
-      if (node.elements.length === 0) return tArray(freshTypeVar());
-      const elemType = infer(node.elements[0], env, subst);
-      for (const el of node.elements.slice(1)) {
-        unify(elemType, infer(el, env, subst), subst);
+      const elementTypes = [];
+
+      for (const el of node.elements) {
+        if (el === null) {
+          throw new Error('Array holes are not supported');
+        }
+
+        if (el.type === 'SpreadElement') {
+          const spreadType = infer(el.argument, env, subst);
+
+          if (spreadType.tag !== 'array') {
+            throw new Error(`Spread elements must be arrays, was ${showType(spreadType)}`);
+          }
+
+          elementTypes.push(spreadType.elemType);
+        } else {
+          const elType = infer(el, env, subst);
+          elementTypes.push(elType);
+        }
       }
-      return tArray(applySubst(subst, elemType));
+
+      if (elementTypes.length === 0) {
+        return tArray(freshTypeVar());
+      }
+
+      const baseType = elementTypes[0];
+      for (const et of elementTypes.slice(1)) {
+        unify(baseType, et, subst);
+      }
+
+      return tArray(applySubst(subst, baseType));
     }
 
     case 'BinaryExpression': {
@@ -369,7 +404,6 @@ export function infer(node, env, subst) {
     }
 
     case 'VariableDeclaration': {
-      //if (node.kind !== 'let') throw new Error('Only let bindings are supported');
       let newEnv = { ...env };
 
       for (const decl of node.declarations) {
@@ -396,6 +430,10 @@ export function infer(node, env, subst) {
         }
       }
       return lastType;
+    }
+
+    case 'UpdateExpression': {
+      return infer(node.argument, env, subst);
     }
 
     default:

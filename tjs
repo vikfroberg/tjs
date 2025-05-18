@@ -8,17 +8,26 @@ import { infer, typeScheme, showType } from './type-inference.mjs';
 // --- Import/Export Analysis ---
 function extractImports(ast) {
   const imports = [];
+
   for (const node of ast.body) {
     if (node.type === 'ImportDeclaration') {
+      const source = node.source.value;
+
+      // Skip Node core modules or npm packages (i.e., bare specifiers)
+      if (!source.startsWith('.') && !source.startsWith('/')) {
+        continue;
+      }
+
       imports.push({
-        source: node.source.value,
+        source,
         specifiers: node.specifiers.map(spec => ({
           local: spec.local.name,
           imported: spec.imported ? spec.imported.name : 'default',
-        }))
+        })),
       });
     }
   }
+
   return imports;
 }
 
@@ -39,41 +48,36 @@ function extractExports(ast) {
   return exports;
 }
 
-function extractTopLevelBindings(ast) {
-  const bindings = {};
-  for (const node of ast.body) {
-    if (node.type === 'VariableDeclaration') {
-      for (const d of node.declarations) {
-        if (d.id.type === 'Identifier') {
-          bindings[d.id.name] = d.init;
-        }
+function isTopLevelBinding(node) {
+  switch (node.type) {
+    case 'VariableDeclaration':
+      return node.declarations
+        .filter(d => d.id.type === 'Identifier')
+        .map(d => [d.id.name, d.init]);
+
+    case 'FunctionDeclaration':
+      return node.id?.type === 'Identifier'
+        ? [[node.id.name, node]]
+        : [];
+
+    case 'ExportNamedDeclaration':
+      if (node.declaration?.type === 'VariableDeclaration') {
+        return node.declaration.declarations
+          .filter(d => d.id.type === 'Identifier')
+          .map(d => [d.id.name, d.init]);
       }
-    } else if (node.type === 'FunctionDeclaration') {
-      if (node.id && node.id.type === 'Identifier') {
-        bindings[node.id.name] = node;
+      if (node.declaration?.type === 'FunctionDeclaration') {
+        const id = node.declaration.id;
+        return id?.type === 'Identifier' ? [[id.name, node.declaration]] : [];
       }
-    }
-    else if (node.type === 'ExportNamedDeclaration') {
-      const decl = node.declaration;
-      if (decl.type === 'VariableDeclaration') {
-        for (const d of decl.declarations) {
-          if (d.id.type === 'Identifier') {
-            bindings[d.id.name] = d.init;
-          }
-        }
-      }
-    }
-    else if (node.type === 'ExportDefaultDeclaration') {
-      bindings['default'] = node.declaration;
-    }
-    else if (node.type === 'ImportDeclaration') {
-      // Ignore
-    }
-    else {
-      throw new Error(`Unsupported top-level node type: ${node.type}`);
-    }
+      return [];
+
+    case 'ExportDefaultDeclaration':
+      return [['default', node.declaration]];
+
+    default:
+      return []; // No top-level binding
   }
-  return bindings;
 }
 
 function buildDependencyGraph(files) {
@@ -119,7 +123,7 @@ function topologicalSort(graph) {
 
 async function parseFile(filePath) {
   const code = await fs.readFile(filePath, 'utf8');
-  const ast = parseModule(code, { module: true });
+  const ast = parseModule(code, { loc: true, module: true });
   return { ast, code };
 }
 
@@ -155,11 +159,16 @@ async function processFiles(entryDir) {
       }
     }
 
-    const topLevelBindings = extractTopLevelBindings(ast);
     const env = { ...importedEnv };
-    for (const [name, expr] of Object.entries(topLevelBindings)) {
-      const typ = infer(expr, env, {});
-      env[name] = typeScheme(typ, []);
+    for (const node of ast.body) {
+      // Always infer
+      const typ = infer(node, env, {});
+
+      // Only bind if it's a top-level binding
+      const bindings = isTopLevelBinding(node);
+      for (const [name, expr] of bindings) {
+        env[name] = typeScheme(typ, []);
+      }
     }
     globalModuleTypes.set(filePath, env);
   }
