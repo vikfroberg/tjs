@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Minimal Hindley-Milner Inference: Only Literals + Imports/Exports
 import fs from 'fs/promises';
 import path from 'path';
@@ -122,15 +123,13 @@ async function parseFile(filePath) {
   return { ast, code };
 }
 
-// TODO: Name resolution?
-
 // --- Type Checking Driver ---
 const globalModuleTypes = new Map();
 
 async function processFiles(entryDir) {
   const entries = await fs.readdir(entryDir);
   const fileData = await Promise.all(entries
-    .filter(f => f.endsWith('.js'))
+    .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
     .map(async f => {
       const full = path.resolve(entryDir, f);
       const { ast } = await parseFile(full);
@@ -166,4 +165,4 @@ async function processFiles(entryDir) {
   }
 }
 
-processFiles('./project').catch(console.error);
+processFiles(path.resolve(process.cwd())).catch(console.error);

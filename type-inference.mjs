@@ -156,6 +156,54 @@ export function infer(node, env, subst) {
       return tFunN(paramTypes.map(t => applySubst(subst, t)), bodyType);
     }
 
+    case 'FunctionDeclaration': {
+      const paramTypes = node.params.map(() => freshTypeVar());
+      let newEnv = env;
+      node.params.forEach((param, i) => {
+        newEnv = extendEnv(newEnv, param.name, typeScheme(paramTypes[i]));
+      });
+      const bodyType = infer(node.body, newEnv, subst);
+      return tFunN(paramTypes.map(t => applySubst(subst, t)), bodyType);
+    }
+
+    case 'ReturnStatement': {
+      const exprType = infer(node.argument, env, subst);
+      return generalize(env, exprType);
+    }
+
+    case 'ObjectExpression': {
+      return { tag: 'object' };
+    }
+
+
+    case 'MemberExpression': {
+      return { tag: 'object-access' };
+    }
+
+    case 'UpdateExpression': {
+      return { tag: 'object-update' };
+    }
+
+    case 'SwitchStatement': {
+      return { tag: 'switch' };
+    }
+
+    case 'ExpressionStatement': {
+      return { tag: 'expression' };
+    }
+
+    case 'NewExpression': {
+      return { tag: 'new-expression' };
+    }
+
+    case 'ForOfStatement': {
+      return { tag: 'for-of' };
+    }
+
+    case 'UnaryExpression': {
+      return { tag: 'unary-expression' };
+    }
+
     case 'CallExpression': {
       const fnType = infer(node.callee, env, subst);
       const argTypes = node.arguments.map(arg => infer(arg, env, subst));
@@ -194,7 +242,7 @@ export function infer(node, env, subst) {
     }
 
     case 'VariableDeclaration': {
-      if (node.kind !== 'let') throw new Error('Only let bindings are supported');
+      //if (node.kind !== 'let') throw new Error('Only let bindings are supported');
       let newEnv = { ...env };
 
       for (const decl of node.declarations) {
