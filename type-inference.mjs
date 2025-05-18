@@ -16,6 +16,10 @@ function tArray(elemType) {
   return { tag: 'array', elemType };
 }
 
+function tRecord(fields, row = freshTypeVar()) {
+  return { tag: 'record', fields, row };
+}
+
 export function typeScheme(type, quantifiers = []) {
   return { type, quantifiers };
 }
@@ -118,6 +122,37 @@ function unify(t1, t2, subst = {}) {
       case 'array':
         unify(t1.elemType, t2.elemType, subst);
         return subst;
+      case 'record': {
+        const keys1 = Object.keys(t1.fields);
+        const keys2 = Object.keys(t2.fields);
+
+        // Common fields must unify
+        for (const key of keys1) {
+          if (key in t2.fields) {
+            unify(t1.fields[key], t2.fields[key], subst);
+          }
+        }
+
+        // Remaining fields go into row variables
+        const rest1 = {};
+        const rest2 = {};
+
+        for (const key of keys1) {
+          if (!(key in t2.fields)) rest1[key] = t1.fields[key];
+        }
+        for (const key of keys2) {
+          if (!(key in t1.fields)) rest2[key] = t2.fields[key];
+        }
+
+        const r1 = applySubst(subst, t1.row);
+        const r2 = applySubst(subst, t2.row);
+
+        // Recurse on remaining rows
+        unify(r1, tRecord(rest2, freshTypeVar()), subst);
+        unify(r2, tRecord(rest1, freshTypeVar()), subst);
+
+        return subst;
+      }
     }
   }
 
@@ -172,12 +207,28 @@ export function infer(node, env, subst) {
     }
 
     case 'ObjectExpression': {
-      return { tag: 'object' };
+      const fieldTypes = {};
+      for (const prop of node.properties) {
+        if (prop.type !== 'Property' || prop.kind !== 'init') {
+          throw new Error('Only simple object properties are supported');
+        }
+        const key = prop.key.name || prop.key.value;
+        fieldTypes[key] = infer(prop.value, env, subst);
+      }
+      console.log(fieldTypes);
+      return tRecord(fieldTypes);
     }
 
 
     case 'MemberExpression': {
-      return { tag: 'object-access' };
+      if (node.computed) throw new Error('Only dot-access is supported');
+      const objType = infer(node.object, env, subst);
+      const field = node.property.name;
+
+      const resultType = freshTypeVar();
+      const expectedRecord = tRecord({ [field]: resultType });
+      unify(objType, expectedRecord, subst);
+      return applySubst(subst, resultType);
     }
 
     case 'UpdateExpression': {
@@ -185,23 +236,60 @@ export function infer(node, env, subst) {
     }
 
     case 'SwitchStatement': {
-      return { tag: 'switch' };
+      const discType = infer(node.discriminant, env, subst);
+      let resultType = freshTypeVar();
+      let hasDefault = false;
+
+      for (const switchCase of node.cases) {
+        if (switchCase.test !== null) {
+          const caseType = infer(switchCase.test, env, subst);
+          unify(discType, caseType, subst);
+        } else {
+          // TODO: Does this really work?
+          hasDefault = true;
+        }
+
+        for (const stmt of switchCase.consequent) {
+          const stmtType = infer(stmt, env, subst);
+          unify(resultType, stmtType, subst);
+        }
+      }
+
+      return applySubst(subst, resultType);
     }
 
     case 'ExpressionStatement': {
+      // console.log(node);
       return { tag: 'expression' };
     }
 
     case 'NewExpression': {
+      // console.log(node);
       return { tag: 'new-expression' };
     }
 
     case 'ForOfStatement': {
+      // console.log(node);
       return { tag: 'for-of' };
     }
 
     case 'UnaryExpression': {
-      return { tag: 'unary-expression' };
+      const argType = infer(node.argument, env, subst);
+
+      switch (node.operator) {
+        case '+':
+        case '-':
+        case '~':
+          unify(argType, tNumber, subst);
+          return tNumber;
+
+        case '!':
+          unify(argType, tBoolean, subst);
+          return tBoolean;
+
+        default:
+          throw new Error(`Unsupported unary operator: ${node.operator}`);
+      }
     }
 
     case 'CallExpression': {
