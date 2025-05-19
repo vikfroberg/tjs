@@ -2,130 +2,9 @@
 // Minimal Hindley-Milner Inference: Only Literals + Imports/Exports
 import fs from 'fs/promises';
 import path from 'path';
-import { parseModule } from 'meriyah';
-import { infer, typeScheme, showType } from './type-inference.mjs';
-
-// --- Import/Export Analysis ---
-function extractImports(ast) {
-  const imports = [];
-
-  for (const node of ast.body) {
-    if (node.type === 'ImportDeclaration') {
-      const source = node.source.value;
-
-      // Skip Node core modules or npm packages (i.e., bare specifiers)
-      if (!source.startsWith('.') && !source.startsWith('/')) {
-        continue;
-      }
-
-      imports.push({
-        source,
-        specifiers: node.specifiers.map(spec => ({
-          local: spec.local.name,
-          imported: spec.imported ? spec.imported.name : 'default',
-        })),
-      });
-    }
-  }
-
-  return imports;
-}
-
-function extractExports(ast) {
-  const exports = {};
-  for (const node of ast.body) {
-    if (node.type === 'ExportNamedDeclaration') {
-      const decl = node.declaration;
-      if (decl.type === 'VariableDeclaration') {
-        for (const d of decl.declarations) {
-          if (d.id.type === 'Identifier') {
-            exports[d.id.name] = d.init;
-          }
-        }
-      }
-    }
-  }
-  return exports;
-}
-
-function isTopLevelBinding(node) {
-  switch (node.type) {
-    case 'VariableDeclaration':
-      return node.declarations
-        .filter(d => d.id.type === 'Identifier')
-        .map(d => [d.id.name, d.init]);
-
-    case 'FunctionDeclaration':
-      return node.id?.type === 'Identifier'
-        ? [[node.id.name, node]]
-        : [];
-
-    case 'ExportNamedDeclaration':
-      if (node.declaration?.type === 'VariableDeclaration') {
-        return node.declaration.declarations
-          .filter(d => d.id.type === 'Identifier')
-          .map(d => [d.id.name, d.init]);
-      }
-      if (node.declaration?.type === 'FunctionDeclaration') {
-        const id = node.declaration.id;
-        return id?.type === 'Identifier' ? [[id.name, node.declaration]] : [];
-      }
-      return [];
-
-    case 'ExportDefaultDeclaration':
-      return [['default', node.declaration]];
-
-    default:
-      return []; // No top-level binding
-  }
-}
-
-function buildDependencyGraph(files) {
-  const graph = new Map();
-  for (const [filePath, ast] of files) {
-    const imports = extractImports(ast);
-    const dependencies = imports.map(imp =>
-      path.resolve(path.dirname(filePath), imp.source)
-    );
-    graph.set(filePath, dependencies);
-  }
-  return graph;
-}
-
-function topologicalSort(graph) {
-  const visited = new Set();
-  const onStack = new Set();
-  const sorted = [];
-
-  function visit(node, ancestors = []) {
-    if (visited.has(node)) return;
-    if (onStack.has(node)) {
-      const cycle = [...ancestors, node].join(' -> ');
-      throw new Error(`Cyclic import detected: ${cycle}`);
-    }
-
-    onStack.add(node);
-    const deps = graph.get(node) || [];
-    for (const dep of deps) {
-      visit(dep, [...ancestors, node]);
-    }
-    onStack.delete(node);
-    visited.add(node);
-    sorted.push(node);
-  }
-
-  for (const node of graph.keys()) {
-    visit(node);
-  }
-
-  return sorted;
-}
-
-async function parseFile(filePath) {
-  const code = await fs.readFile(filePath, 'utf8');
-  const ast = parseModule(code, { loc: true, module: true });
-  return { ast, code };
-}
+import * as TypeCheck from './type-check.mjs';
+import * as Ast from './ast.mjs';
+import * as Dag from './dag.mjs';
 
 // --- Type Checking Driver ---
 const globalModuleTypes = new Map();
@@ -136,17 +15,17 @@ async function processFiles(entryDir) {
     .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
     .map(async f => {
       const full = path.resolve(entryDir, f);
-      const { ast } = await parseFile(full);
+      const { ast } = await Ast.parseFile(full);
       return [full, ast];
     }));
 
   const fileMap = new Map(fileData);
-  const depGraph = buildDependencyGraph(fileMap);
-  const sortedPaths = topologicalSort(depGraph);
+  const depGraph = Dag.buildDependencyGraph(fileMap);
+  const sortedPaths = Dag.topologicalSort(depGraph);
 
   for (const filePath of sortedPaths) {
     const ast = fileMap.get(filePath);
-    const imports = extractImports(ast);
+    const imports = Ast.extractImports(ast);
     const importedEnv = {};
     for (const imp of imports) {
       const resolved = path.resolve(path.dirname(filePath), imp.source);
@@ -161,13 +40,10 @@ async function processFiles(entryDir) {
 
     const env = { ...importedEnv };
     for (const node of ast.body) {
-      // Always infer
-      const typ = infer(node, env, {});
-
-      // Only bind if it's a top-level binding
-      const bindings = isTopLevelBinding(node);
+      const typ = TypeCheck.infer(node, env, {});
+      const bindings = Ast.isTopLevelBinding(node);
       for (const [name, expr] of bindings) {
-        env[name] = typeScheme(typ, []);
+        env[name] = TypeCheck.typeScheme(typ, []);
       }
     }
     globalModuleTypes.set(filePath, env);

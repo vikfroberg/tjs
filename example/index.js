@@ -1,3 +1,4 @@
+// createPotion :: String -> { length: Number | a } -> { name: String, ingredients: { length: Number | a }, strength: Number }
 function createPotion(name, ingredients) {
   return {
     name: name,
@@ -6,11 +7,13 @@ function createPotion(name, ingredients) {
   };
 }
 
+// potions :: [{ name: String, ingredients: [String], strength: Number }]
 const potions = [createPotion("Water", ["water"])];
 
-potions.push(createPotion("Healing Brew", ["herb", "mushroom"]));
-potions.push(createPotion("Fire Elixir", ["ash", "pepper", "oil"]));
+let potion = createPotion("Healing Brew", ["herb", "mushroom"]);
+potions.push(potion);
 /*
+potions.push(createPotion("Fire Elixir", ["ash", "pepper", "oil"]));
 
 function describePotion(potion) {
   return potion.name + " has " + potion.ingredients.length + " ingredients.";

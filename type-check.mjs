@@ -8,18 +8,46 @@ const tNumber = { tag: 'number' };
 const tBoolean = { tag: 'boolean' };
 const tString = { tag: 'string' };
 const tEmptyRow = { tag: 'empty-row' };
+const tVoid = { tag: 'void' };
+
+function tNominal(name, typeArgs = []) {
+  return { tag: 'nominal', name, typeArgs };
+}
 
 function tFunN(params, result) {
   return { tag: 'funN', params, result };
 }
 
-function tArray(elemType) {
-  return { tag: 'array', elemType };
-}
-
 function tRecord(fields, row = tEmptyRow) {
   return { tag: 'record', fields, row };
 }
+
+const nominalMethodTable = {
+  Array: ([elemType]) => {
+    const self = tNominal('Array', [elemType]);
+    return {
+      push: tFunN([elemType], tNumber),
+      length: tNumber,
+    }
+  },
+  Set: (typeArgs) => {
+    const [elemType] = typeArgs;
+    const self = tNominal('Set', [elemType]);
+    return {
+      add: tFunN([elemType], self),
+      delete: tFunN([elemType], self),
+      has: tFunN([elemType], tBoolean),
+    };
+  },
+  Map: ([k, v]) => {
+    const self = tNominal('Map', [k, v]);
+    return {
+      get: tFunN([k], v),
+      set: tFunN([k, v], self),
+      has: tFunN([k], tBoolean),
+    };
+  },
+};
 
 export function typeScheme(type, quantifiers = []) {
   return { type, quantifiers };
@@ -33,11 +61,13 @@ function freeTypeVars(type) {
         ...type.params.flatMap(p => [...freeTypeVars(p)]),
         ...freeTypeVars(type.result)
       ]);
-    case 'array': return freeTypeVars(type.elemType);
     case 'record': {
       const fieldVars = Object.values(type.fields).flatMap(t => [...freeTypeVars(t)]);
       const rowVars = freeTypeVars(type.row);
       return new Set([...fieldVars, ...rowVars]);
+    }
+    case 'nominal': {
+      return new Set(type.typeArgs.flatMap(t => [...freeTypeVars(t)]));
     }
     case 'empty-row':
       return new Set();
@@ -78,9 +108,10 @@ function occursInType(v, type) {
   switch (type.tag) {
     case 'var': return v.id === type.id;
     case 'funN': return type.params.some(p => occursInType(v, p)) || occursInType(v, type.result);
-    case 'array': return occursInType(v, type.elemType);
     case 'record':
       return Object.values(type.fields).some(t => occursInType(v, t)) || occursInType(v, type.row);
+    case 'nominal':
+      return type.typeArgs.some(t => occursInType(v, t));
     case 'empty-row':
       return false;
     default: return false;
@@ -96,14 +127,18 @@ function applySubst(subst, type) {
         type.params.map(p => applySubst(subst, p)),
         applySubst(subst, type.result)
       );
-    case 'array':
-      return tArray(applySubst(subst, type.elemType));
     case 'record': {
       const newFields = {};
       for (const [key, val] of Object.entries(type.fields)) {
         newFields[key] = applySubst(subst, val);
       }
       return tRecord(newFields, applySubst(subst, type.row));
+    }
+    case 'nominal': {
+      return tNominal(
+        type.name,
+        type.typeArgs.map(t => applySubst(subst, t))
+      );
     }
     case 'empty-row':
       return type;
@@ -126,6 +161,26 @@ function unify(t1, t2, subst = {}) {
 
   if (t2.tag === 'var') return unify(t2, t1, subst);
 
+  // If one side is a record and the other is a nominal,
+  // project the nominal into a structural shape before unifying.
+  if (t1.tag === 'record' && t2.tag === 'nominal') {
+    const project = nominalMethodTable[t2.name];
+    if (!project) throw new Error(`No structural view for ${t2.name}`);
+    const methods = project(t2.typeArgs);
+
+    const asRecord = tRecord(methods, tEmptyRow);
+    return unify(t1, asRecord, subst);
+  }
+
+  if (t2.tag === 'record' && t1.tag === 'nominal') {
+    const project = nominalMethodTable[t1.name];
+    if (!project) throw new Error(`No structural view for ${t1.name}`);
+    const methods = project(t1.typeArgs);
+
+    const asRecord = tRecord(methods, tEmptyRow);
+    return unify(asRecord, t2, subst);
+  }
+
   if (t1.tag === t2.tag) {
     switch (t1.tag) {
       case 'number':
@@ -140,9 +195,6 @@ function unify(t1, t2, subst = {}) {
           unify(t1.params[i], t2.params[i], subst);
         }
         unify(t1.result, t2.result, subst);
-        return subst;
-      case 'array':
-        unify(t1.elemType, t2.elemType, subst);
         return subst;
       case 'record': {
         const keys1 = Object.keys(t1.fields);
@@ -169,8 +221,24 @@ function unify(t1, t2, subst = {}) {
           throw new Error('Cannot add fields to closed record');
         }
 
-        unify(applySubst(subst, t1.row), tRecord(extra2, freshTypeVar()), subst);
-        unify(applySubst(subst, t2.row), tRecord(extra1, freshTypeVar()), subst);
+        const rest1 = applySubst(subst, t1.row);
+        const rest2 = applySubst(subst, t2.row);
+
+        if (rest1.tag !== 'empty-row') {
+          unify(rest1, tRecord(extra2, freshTypeVar()), subst);
+        }
+        if (rest2.tag !== 'empty-row') {
+          unify(rest2, tRecord(extra1, freshTypeVar()), subst);
+        }
+        return subst;
+      }
+      case 'nominal': {
+        if (t1.name !== t2.name || t1.typeArgs.length !== t2.typeArgs.length) {
+          throw new Error(`Cannot unify different nominal types: ${t1.name} vs ${t2.name}`);
+        }
+        for (let i = 0; i < t1.typeArgs.length; i++) {
+          unify(t1.typeArgs[i], t2.typeArgs[i], subst);
+        }
         return subst;
       }
       case 'empty-row':
@@ -275,13 +343,24 @@ export function infer(node, env, subst) {
     }
 
     case 'MemberExpression': {
-      if (node.computed) throw new Error('Only dot-access is supported');
       const objType = infer(node.object, env, subst);
       const field = node.property.name;
-      const resultType = freshTypeVar();
-      const expectedRecord = tRecord({ [field]: resultType }, freshTypeVar());
-      unify(objType, expectedRecord, subst);
-      return applySubst(subst, resultType);
+      const applied = applySubst(subst, objType);
+
+      console.log("MemberExpression", applied, node);
+      if (applied.tag === 'nominal') {
+        const entry = nominalMethodTable[applied.name];
+        if (!entry) throw new Error(`No method table for nominal type ${applied.name}`);
+        const methods = entry(applied.typeArgs);
+        const methodType = methods[field];
+        if (!methodType) throw new Error(`Unknown method ${field} on ${applied.name}`);
+        return applySubst(subst, methodType);
+      } else {
+        const resultType = freshTypeVar();
+        const expected = tRecord({ [field]: resultType }, freshTypeVar());
+        unify(applied, expected, subst);
+        return applySubst(subst, resultType);
+      }
     }
 
     case 'SwitchStatement': {
@@ -308,18 +387,17 @@ export function infer(node, env, subst) {
     }
 
     case 'ExpressionStatement': {
-      // console.log(node);
-      return { tag: 'expression' };
+      let typ = infer(node.expression, env, subst);
+      return tVoid;
     }
 
-    // TODO: Hacky, how do we handle classes in js? Eg Set, Array, Map, etc.
     case 'NewExpression': {
-      return infer(node.arguments[0], env, subst);
+      throw new Error('New expressions are not supported');
     }
 
     case 'ForOfStatement': {
       // console.log(node);
-      return { tag: 'for-of' };
+      throw new Error('For-of loops are not supported');
     }
 
     case 'UnaryExpression': {
@@ -373,7 +451,7 @@ export function infer(node, env, subst) {
       }
 
       if (elementTypes.length === 0) {
-        return tArray(freshTypeVar());
+        return tNominal('Array', [freshTypeVar()]);
       }
 
       const baseType = elementTypes[0];
@@ -381,7 +459,7 @@ export function infer(node, env, subst) {
         unify(baseType, et, subst);
       }
 
-      return tArray(applySubst(subst, baseType));
+      return tNominal('Array', [applySubst(subst, baseType)]);
     }
 
     case 'BinaryExpression': {
@@ -443,27 +521,35 @@ export function infer(node, env, subst) {
 
 // Helper to print types (optional)
 export function showType(type) {
-  if (type.tag === 'number') {
-    return 'number';
-  } else if (type.tag === 'boolean') {
-    return 'boolean';
-  } else if (type.tag === 'string') {
-    return 'string';
-  } else if (type.tag === 'var') {
-    return type.id;
-  } else if (type.tag === 'array') {
-    if (type.elemType.tag === 'var') {
-      return `[]`;
+  switch (type.tag) {
+    case 'number':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'string':
+      return 'string';
+    case 'void':
+      return 'void';
+    case 'var':
+      return `'${type.id}`;
+    case 'funN':
+      return `(${type.params.map(showType).join(', ')}) => ${showType(type.result)}`;
+    case 'record': {
+      const fields = Object.entries(type.fields)
+        .map(([k, v]) => `${k}: ${showType(v)}`)
+        .join(', ');
+      const row = type.row;
+      if (row.tag === 'empty-row') {
+        return `{ ${fields} }`;
+      } else {
+        return `{ ${fields} | ${showType(row)} }`;
+      }
     }
-    return `[${showType(type.elemType)}]`;
-  } else if (type.tag === 'funN') {
-    return `(${type.params.map(showType).join(', ')}) => ${showType(type.result)}`;
-  } else if (type.tag === 'record') {
-    if (Object.entries(type.fields).length === 0) {
-      return '{}';
-    }
-    return `{ ${Object.entries(type.fields).map(([k, v]) => `${k}: ${showType(v)}`).join(', ')} }`;
-  } else {
-    throw new Error(`Unknown type: ${JSON.stringify(type)}`);
+    case 'nominal':
+      return `${type.name}<${type.typeArgs.map(showType).join(', ')}>`;
+    case 'empty-row':
+      return '∅';
+    default:
+      throw new Error(`Unknown type tag in showType: ${JSON.stringify(type)}`);
   }
 }
