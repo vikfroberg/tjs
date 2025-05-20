@@ -1,3 +1,4 @@
+import util from 'util';
 let typeVarCounter = 0;
 
 function freshTypeVar() {
@@ -250,6 +251,7 @@ function unify(t1, t2, subst = {}) {
 }
 
 function extendEnv(env, name, scheme) {
+//  console.log("extendEnv", env, name, scheme);
   return { ...env, [name]: scheme };
 }
 
@@ -259,6 +261,7 @@ function lookup(env, name) {
 }
 
 export function infer(node, env, subst) {
+  // console.log("infer", node, env);
   switch (node.type) {
     case 'Literal': {
       if (typeof node.value === 'number') return tNumber;
@@ -279,8 +282,7 @@ export function infer(node, env, subst) {
       return tBoolean;
     }
 
-    case 'ArrowFunctionExpression': 
-    case 'FunctionDeclaration': {
+    case 'ArrowFunctionExpression': {
       const paramTypes = node.params.map(param => {
         if (param.type === 'AssignmentPattern') {
           return infer(param.right, env, subst);
@@ -347,7 +349,6 @@ export function infer(node, env, subst) {
       const field = node.property.name;
       const applied = applySubst(subst, objType);
 
-      console.log("MemberExpression", applied, node);
       if (applied.tag === 'nominal') {
         const entry = nominalMethodTable[applied.name];
         if (!entry) throw new Error(`No method table for nominal type ${applied.name}`);
@@ -384,11 +385,6 @@ export function infer(node, env, subst) {
       }
 
       return applySubst(subst, resultType);
-    }
-
-    case 'ExpressionStatement': {
-      let typ = infer(node.expression, env, subst);
-      return tVoid;
     }
 
     case 'NewExpression': {
@@ -484,6 +480,7 @@ export function infer(node, env, subst) {
     case 'VariableDeclaration': {
       let newEnv = { ...env };
 
+      /*
       for (const decl of node.declarations) {
         const name = decl.id.name;
         const assumedType = freshTypeVar();
@@ -493,11 +490,13 @@ export function infer(node, env, subst) {
         const gen = generalize(newEnv, applySubst(subst, assumedType));
         newEnv = extendEnv(newEnv, name, gen);
       }
+      */
 
       return newEnv;
     }
 
     case 'BlockStatement': {
+      /*
       let currentEnv = env;
       let lastType = null;
       for (const stmt of node.body) {
@@ -508,6 +507,15 @@ export function infer(node, env, subst) {
         }
       }
       return lastType;
+        */
+      return tVoid;
+    }
+
+    case 'ExpressionStatement': {
+      /*
+      let typ = infer(node.expression, env, subst);
+      */
+      return tVoid;
     }
 
     case 'UpdateExpression': {
