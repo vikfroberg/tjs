@@ -1,7 +1,8 @@
-import fs from 'fs';
-import path from 'path';
-import { parseModule } from 'meriyah';
-import util from 'util';
+import fs from "fs";
+import path from "path";
+import { parseModule } from "meriyah";
+import util from "util";
+import * as Namecheck from "./src/namecheck.mjs";
 
 // globals
 let subst = {};
@@ -341,7 +342,13 @@ let main = (entryDir) => {
     subst = {}
     sourceLines = sourceFiles.get(filePath).split('\n');
 
-    let fileExports = {}
+    let namingcheck = Namecheck.check(ast);
+
+    if (namingcheck.errors.length) {
+      console.log(namingcheck.errors);
+    }
+
+    let fileExports = {};
     for (const node of ast.body) {
       if (node.type === 'VariableDeclaration') {
         for (const decl of node.declarations) {
