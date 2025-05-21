@@ -1,1 +1,1 @@
-export const random = 10;
+export const randon = 10;
