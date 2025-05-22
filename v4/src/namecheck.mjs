@@ -116,6 +116,16 @@ const processVariableDeclaration = (node, errorRenderer) => {
   });
 };
 
+const processImportDeclaration = (node, errorRenderer) => {
+  node.specifiers.forEach((specifier) => {
+    processNode(specifier, errorRenderer);
+  });
+};
+
+const processImportSpecifier = (node, errorRenderer) => {
+  declareVariable(node.local.name, node, errorRenderer);
+};
+
 const processNode = (node, errorRenderer) => {
   switch (node.type) {
     case "Program":
@@ -145,7 +155,11 @@ const processNode = (node, errorRenderer) => {
       break;
 
     case "ImportDeclaration":
-      // @todo
+      processImportDeclaration(node, errorRenderer);
+      break;
+
+    case "ImportSpecifier":
+      processImportSpecifier(node, errorRenderer);
       break;
 
     default:
