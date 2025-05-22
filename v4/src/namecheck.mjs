@@ -1,3 +1,10 @@
+/**
+ * @todo
+ * - Undefined import variables - Checking against index of exported variables per file
+ * - Import * as Something syntax, both the as Something it self but also the usages of Something.variable access.
+ * - Object destruction in declarations
+ * - List destruction in declarations
+ */
 let errors = [];
 let scopes = new Map();
 
@@ -55,10 +62,32 @@ const renderDuplicateDeclarationError = (programMeta) => {
   };
 };
 
+// @todo consolidate with other unsupported error message and have only one
+let renderUnsupportedError = (programMeta) => {
+  let { sourceLines, fileName } = programMeta;
+  return (node) => {
+    let { line, pointer } = renderSourceLineWithPointer(node.loc, sourceLines);
+    return [
+      `-- UNSUPPORTED ERROR --------------------------------- ${fileName}`,
+      "",
+      "You used a feature that is not suported.",
+      "",
+      `    ${line}`,
+      `    ${pointer}`,
+      "",
+      "This feature is not allowed in TJS because it makes code harder to analyze and optimize.",
+      "",
+      "Instead, try to refactor your code to use a different feature. See the documentation for more information:",
+      "https://github.com/vikfroberg/tjs/blob/main/docs/unsupported.md",
+    ].join("\n");
+  };
+};
+
 // @todo: Move the rendering of errors out to a common file for errors for all phases
 export const errorRenderer = (programMeta) => ({
   renderUndefinedVariableError: renderUndefinedVariableError(programMeta),
   renderDuplicateDeclarationError: renderDuplicateDeclarationError(programMeta),
+  renderUnsupportedError: renderUnsupportedError(programMeta),
 });
 
 function reportError(message) {
@@ -111,8 +140,28 @@ const processBinaryExpression = (node, errorRenderer) => {
 
 const processVariableDeclaration = (node, errorRenderer) => {
   node.declarations.forEach((declaration) => {
-    declareVariable(declaration.id.name, declaration, errorRenderer);
-    processNode(declaration.init, errorRenderer);
+    switch (declaration.id.type) {
+      case "Identifier": {
+        declareVariable(declaration.id.name, declaration.id, errorRenderer);
+        processNode(declaration.init, errorRenderer);
+        break;
+      }
+      case "ObjectPattern": {
+        const properties = declaration.id.properties;
+        properties.forEach((prop) => {
+          const localName = prop.value.name;
+          declareVariable(localName, prop.value, errorRenderer);
+        });
+        break;
+      }
+      case "ArrayPattern": {
+        const elements = declaration.id.elements;
+        elements.forEach((elem) => {
+          declareVariable(elem.name, elem, errorRenderer);
+        });
+        break;
+      }
+    }
   });
 };
 
@@ -163,10 +212,7 @@ const processNode = (node, errorRenderer) => {
       break;
 
     default:
-      reportError(
-        `Unsupported/unknown syntax while checking names: ${node.type}`,
-        node,
-      );
+      reportError(errorRenderer.renderUnsupportedError(node));
       break;
   }
 };
