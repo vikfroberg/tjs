@@ -5,7 +5,7 @@
  * - Object destruction in declarations
  * - List destruction in declarations
  */
-let errors = [];
+let errors = null;
 let scopes = new Map();
 
 const renderSourceLineWithPointer = (location, sourceLines) => {
@@ -70,7 +70,7 @@ let renderUnsupportedError = (programMeta) => {
     return [
       `-- UNSUPPORTED ERROR --------------------------------- ${fileName}`,
       "",
-      "You used a feature that is not suported.",
+      `You used a feature that is not suported (${node.type}).`,
       "",
       `    ${line}`,
       `    ${pointer}`,
@@ -91,8 +91,7 @@ export const errorRenderer = (programMeta) => ({
 });
 
 function reportError(message) {
-  console.log(message);
-  process.exit(1);
+  errors = message;
 }
 
 // Look up and return associated AST node if variable already exists
@@ -167,15 +166,20 @@ const processVariableDeclaration = (node, errorRenderer) => {
 
 const processImportDeclaration = (node, errorRenderer) => {
   node.specifiers.forEach((specifier) => {
-    processNode(specifier, errorRenderer);
+    switch (specifier.type) {
+      case "ImportDefaultSpecifier":
+      case "ImportSpecifier":
+      case "ImportNamespaceSpecifier": {
+        declareVariable(specifier.local.name, specifier.local, errorRenderer);
+        break;
+      }
+    }
   });
 };
 
-const processImportSpecifier = (node, errorRenderer) => {
-  declareVariable(node.local.name, node, errorRenderer);
-};
-
 const processNode = (node, errorRenderer) => {
+  if (errors) return; // Only process up until first error
+
   switch (node.type) {
     case "Program":
       processProgram(node, errorRenderer);
@@ -207,10 +211,6 @@ const processNode = (node, errorRenderer) => {
       processImportDeclaration(node, errorRenderer);
       break;
 
-    case "ImportSpecifier":
-      processImportSpecifier(node, errorRenderer);
-      break;
-
     default:
       reportError(errorRenderer.renderUnsupportedError(node));
       break;
@@ -219,7 +219,7 @@ const processNode = (node, errorRenderer) => {
 
 export const check = (ast, errorRenderer) => {
   // Reset globals
-  errors = [];
+  errors = null;
   scopes = [new Map()];
 
   processNode(ast, errorRenderer);
