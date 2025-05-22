@@ -1,3 +1,5 @@
+import { createInternalError } from './error.mjs';
+
 export let extractImports = (ast) => {
   const imports = [];
 
@@ -21,4 +23,23 @@ export let extractImports = (ast) => {
   }
 
   return imports;
+}
+
+export let extractExports = (ast) => {
+  const exports = [];
+
+  for (const node of ast.body) {
+    if (node.type === 'ExportNamedDeclaration') {
+      for (const decl of node.declaration.declarations) {
+        exports.push(decl.id.name);
+      }
+    } else if (node.type === 'ExportDefaultDeclaration') {
+      exports.push('__default__');
+    } else if (node.type === 'ExportAllDeclaration') {
+      console.log(createInternalError(node, { phase: 'Ast.extractExports' }));
+      process.exit(1);
+    }
+  }
+
+  return exports;
 }

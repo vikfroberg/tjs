@@ -1,3 +1,5 @@
+import path from 'path';
+
 let concreteType = (name) => ({ type: 'concrete', name });
 let createModule = (exports) => ({ exports, });
 
@@ -11,45 +13,6 @@ let unify = (t1, t2, subst, node) => {
 
 export let inferExpr = (node, env, subst = {}) => {
   switch (node.type) {
-    case 'Program': {
-      let exports = {};
-      console.log(node);
-      for (const node of ast.body) {
-        if (node.type === 'VariableDeclaration') {
-          for (const decl of node.declarations) {
-            const name = decl.id.name;
-            const expr = decl.init;
-            const type = infer(expr, env, subst);
-            env[name] = type;
-          }
-        } else if (node.type === 'ExportNamedDeclaration') {
-          if (node.declaration) {
-            if (node.declaration.type === 'VariableDeclaration') {
-              for (const decl of node.declaration.declarations) {
-                const name = decl.id.name;
-                const expr = decl.init;
-                const type = infer(expr, env, subst);
-                env[name] = type;
-                exports[name] = type;
-              }
-            } else {
-              console.log(createInternalError(node.declaration, { phase: 'infer' }));
-              process.exit(1);
-            }
-          }
-        } else if (node.type === 'ExportDefaultDeclaration') {
-          const type = infer(node.declaration, env, subst);
-          env['__default__'] = type;
-          exports['__default__'] = type;
-        } else if (node.type === 'ImportDeclaration') {
-          // Is this where I set the env and inject dependencies into env?
-        } else {
-          console.log(createInternalError(node.declaration, { phase: 'infer' }));
-          process.exit(1);
-        }
-      }
-    }
-
     case 'Identifier':
       return env[node.name];
 
@@ -90,20 +53,20 @@ export let inferExpr = (node, env, subst = {}) => {
   }
 }
 
-export let inferModule = (node, env, subst = {}) => {
+export let inferModule = (module, moduleInterfaces, env = {}, subst = {}) => {
   let exports = {};
-  for (const subNode of node.body) {
-    if (subNode.type === 'VariableDeclaration') {
-      for (const decl of subNode.declarations) {
+  for (const node of module.ast.body) {
+    if (node.type === 'VariableDeclaration') {
+      for (const decl of node.declarations) {
         const name = decl.id.name;
         const expr = decl.init;
         const type = inferExpr(expr, env, subst);
-        env[name] = type;
+        env[name] = type; // TODO: This does not support recursive let bindings
       }
-    } else if (subNode.type === 'ExportNamedDeclaration') {
-      if (subNode.declaration) {
-        if (subNode.declaration.type === 'VariableDeclaration') {
-          for (const decl of subNode.declaration.declarations) {
+    } else if (node.type === 'ExportNamedDeclaration') {
+      if (node.declaration) {
+        if (node.declaration.type === 'VariableDeclaration') {
+          for (const decl of node.declaration.declarations) {
             const name = decl.id.name;
             const expr = decl.init;
             const type = inferExpr(expr, env, subst);
@@ -111,18 +74,23 @@ export let inferModule = (node, env, subst = {}) => {
             exports[name] = type;
           }
         } else {
-          console.log(createInternalError(subNode.declaration, { phase: 'infer' }));
+          console.log(createInternalError(node.declaration, { phase: 'infer' }));
           process.exit(1);
         }
       }
-    } else if (subNode.type === 'ExportDefaultDeclaration') {
-      const type = inferExpr(subNode.declaration, env, subst);
+    } else if (node.type === 'ExportDefaultDeclaration') {
+      const type = inferExpr(node.declaration, env, subst);
       env['__default__'] = type;
       exports['__default__'] = type;
-    } else if (subNode.type === 'ImportDeclaration') {
-      // Is this where I set the env and inject dependencies into env?
+    } else if (node.type === 'ImportDeclaration') {
+      const importedSource = path.resolve(path.dirname(module.absoluteFilePath), node.source.value);
+      let importedInterface = moduleInterfaces.get(importedSource);
+      for (const spec of node.specifiers) {
+        const type = importedInterface[spec.imported.name];
+        env[spec.local.name] = type;
+      }
     } else {
-      console.log(createInternalError(subNode.declaration, { phase: 'infer' }));
+      console.log(createInternalError(node.declaration, { phase: 'infer' }));
       process.exit(1);
     }
   }

@@ -45,7 +45,6 @@ Please check the import in ${filePath} and ensure that the path is correct.
 }
 
 export let createMissingExportError = ({ node, importSpec, filePath, importPath, availableExports }) => {
-  console.log(node, importSpec);
   const exportList = availableExports.length > 0
     ? `Available exports:\n\n    ${availableExports.join('\n    ')}`
     : `Available exports:\n\n    (none)`;
@@ -78,7 +77,10 @@ Please check your import statement and the exports of the target file.
 `.trim();
 }
 
-export let createInternalError = (node, context) => {
+let sourceLines = [];
+let fileName = '';
+
+export let createInternalError = (node, { phase }) => {
   const loc = node.loc?.start ?? { line: 0, column: 0 };
   const line = sourceLines[loc.line - 1] ?? '';
   const pointer = ' '.repeat(loc.column) + '^';
@@ -93,9 +95,7 @@ export let createInternalError = (node, context) => {
     '',
     `Node type: '${node.type}'`,
     '',
-    context.phase === 'infer'
-      ? `Hint: Add a case to 'infer()' to support this type.`
-      : `Hint: Add a case to 'nameCheck()' to support this type.`,
+    `Hint: Add a case to '${phase}' to support this type.`
   ].join('\n');
 }
 

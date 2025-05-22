@@ -23,7 +23,7 @@ let findJsFiles = (dir) => {
   return files;
 }
 
-let checkImports = (absoluteFilePath, imports) => {
+let checkImportsExists = (absoluteFilePath, imports) => {
   for (const import_ of imports) {
     const resolvedPath = path.resolve(path.dirname(absoluteFilePath), import_.source);
     if (!fs.existsSync(resolvedPath)) {
@@ -33,26 +33,22 @@ let checkImports = (absoluteFilePath, imports) => {
   }
 }
 
-let moduleInterfaces = new Map();
 
-let getImportTypes = (module, moduleInterfaces) => {
-  // TODO: If you import * as foof from './foo.mjs', then we need to add all exports to the env under that namespace
-
-  let env = {};
+let checkMissingExports = (module, modules) => {
   for (const import_ of module.imports) {
-    const absoluteImportPath = path.resolve(path.dirname(module.absoluteFilePath), import_.source);
-    const moduleInterface = moduleInterfaces.get(absoluteImportPath);
+    const importSourcePath = path.resolve(path.dirname(module.absoluteFilePath), import_.source);
+    const importedModule = modules.get(importSourcePath);
+    const exportedNames = new Set(importedModule.exports);
     for (const spec of import_.specifiers) {
-      const type = moduleInterface[spec.imported];
-      if (!type) {
-        console.log(createMissingExportError({ node: import_, importSpec: spec, filePath: module.absoluteFilePath, importPath: absoluteImportPath, availableExports: Object.keys(moduleInterface) }));
+      if (!exportedNames.has(spec.imported)) {
+        console.log(createMissingExportError({ node: import_, importSpec: spec, filePath: module.absoluteFilePath, importPath: importSourcePath, availableExports: importedModule.exports }));
         process.exit(1);
       }
-      env[spec.local] = type;
     }
   }
-  return env;
 }
+
+let moduleInterfaces = new Map();
 
 export let build = (entryDir) => {
   let files = findJsFiles(entryDir);
@@ -61,13 +57,14 @@ export let build = (entryDir) => {
     let sourceLines = source.split('\n');
     let ast = Parse.fromString(source);
     let imports = Ast.extractImports(ast);
+    checkImportsExists(absoluteFilePath, imports);
+    let exports = Ast.extractExports(ast);
     let relativeFilePath = path.relative(entryDir, absoluteFilePath);
-    checkImports(absoluteFilePath, imports);
-    return [absoluteFilePath, { source, ast, imports, relativeFilePath, absoluteFilePath, sourceLines }];
+    return [absoluteFilePath, { source, ast, imports, relativeFilePath, absoluteFilePath, sourceLines, exports }];
   }));
 
-  const depGraph = modules.map(module => module.imports.map(imp => path.resolve(path.dirname(module.absoluteFilePath), imp.source)));
-  const sortedPathsResult = DependencyGraph.topologicalSort(depGraph);
+  const dependenciesGraph = modules.map(module => module.imports.map(imp => path.resolve(path.dirname(module.absoluteFilePath), imp.source)));
+  const sortedPathsResult = DependencyGraph.topologicalSort(dependenciesGraph);
   if (sortedPathsResult.error) {
     console.log(createCycleError(sortedPathsResult.error));
     process.exit(1);
@@ -75,15 +72,15 @@ export let build = (entryDir) => {
   let sortedPaths = sortedPathsResult.ok;
 
   // Namecheck modules
-  for (const absoluteFilePath of files) {
-    // TODO: Manne will add it here
+  for (const absoluteFilePath of sortedPaths) {
+    let module = modules.get(absoluteFilePath);
+    checkMissingExports(module, modules);
   }
 
   // Typecheck modules
   for (const absoluteFilePath of sortedPaths) {
     let module = modules.get(absoluteFilePath);
-    let env = getImportTypes(module, moduleInterfaces); // TODO: Should this be moved to infer? And checking into canonicalize?
-    let tModule = Typecheck.inferModule(module.ast, env);
+    let tModule = Typecheck.inferModule(module, moduleInterfaces);
     moduleInterfaces.set(absoluteFilePath, tModule.exports);
   }
 
