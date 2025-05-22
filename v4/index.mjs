@@ -342,7 +342,10 @@ let main = (entryDir) => {
     subst = {}
     sourceLines = sourceFiles.get(filePath).split('\n');
 
-    let namingcheck = Namecheck.check(ast);
+    let namingcheck = Namecheck.check(
+      ast,
+      Namecheck.errorRenderer({ sourceLines, fileName }),
+    );
 
     if (namingcheck.errors.length) {
       console.log(namingcheck.errors);
