@@ -16,13 +16,7 @@ const checkProgram = (program) => {
 };
 
 suite("Namecheck", function () {
-  test("Accessing undefined variable inside variable declaration fails", function () {
-    [`const x = y + 5`, `let x = y + 5`, `var x = y + 5`].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
-    );
-  });
-
-  test("Variable declaration registers correctly", function () {
+  test("Variable declarations", function () {
     // Should error out
     [
       `let x = 5
@@ -40,6 +34,10 @@ suite("Namecheck", function () {
         "DuplicateDeclarationError",
       ),
     );
+    // Should also error out
+    [`const x = y + 5`, `let x = y + 5`, `var x = y + 5`].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+    );
     // Should not error out
     [
       `let x = 5, y = 2
@@ -50,7 +48,7 @@ suite("Namecheck", function () {
     );
   });
 
-  test("Import statements registers variables correctly", function () {
+  test("Import statements", function () {
     // Should error out
     [
       `import { x } from "test"
@@ -80,6 +78,39 @@ suite("Namecheck", function () {
     `,
     ].forEach((program) =>
       assert.deepEqual(checkProgram(program).errors, null),
+    );
+  });
+
+  test("Export statements", function () {
+    // Should error out
+    [
+      `export default x`,
+      `export { x }`,
+      `let y = 3;
+      export { x as y }`,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+    );
+    // Should not error out
+    [
+      `const x = 1
+      let y = 3
+      export { x as y }
+      `,
+      `export default 47`,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, null),
+    );
+    // Should error out
+    [
+      `let x = 1
+      export const x = 2
+      `,
+    ].forEach((program) =>
+      assert.deepEqual(
+        checkProgram(program).errors,
+        "DuplicateDeclarationError",
+      ),
     );
   });
 });

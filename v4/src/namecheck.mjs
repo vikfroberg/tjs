@@ -164,6 +164,31 @@ const processVariableDeclaration = (node, errorRenderer) => {
   });
 };
 
+const processExportNamedDeclaration = (node, errorRenderer) => {
+  // When export declares new variables
+  if (node.declaration) {
+    processNode(node.declaration, errorRenderer);
+  }
+
+  // When exporting already defined variables
+  node.specifiers.forEach((specifier) => {
+    switch (specifier.type) {
+      case "ExportSpecifier": {
+        processNode(specifier.local, errorRenderer);
+        break;
+      }
+      default: {
+        reportError(errorRenderer.renderUnsupportedError(node));
+        break;
+      }
+    }
+  });
+};
+
+const processExportDefaultDeclaration = (node, errorRenderer) => {
+  processNode(node.declaration, errorRenderer);
+};
+
 const processImportDeclaration = (node, errorRenderer) => {
   node.specifiers.forEach((specifier) => {
     switch (specifier.type) {
@@ -200,11 +225,11 @@ const processNode = (node, errorRenderer) => {
       break;
 
     case "ExportNamedDeclaration":
-      // Do we need to do anything here?
+      processExportNamedDeclaration(node, errorRenderer);
       break;
 
     case "ExportDefaultDeclaration":
-      // Do we need to do anything here?
+      processExportDefaultDeclaration(node, errorRenderer);
       break;
 
     case "ImportDeclaration":
