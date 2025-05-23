@@ -11,6 +11,7 @@ import {
   createMissingExportError,
   createCycleError,
 } from "./error.mjs";
+import * as Result from "./result.mjs";
 
 let findJsFiles = (dir) => {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -107,7 +108,7 @@ export let build = (entryDir) => {
   );
   const sortedPathsResult = DependencyGraph.topologicalSort(dependenciesGraph);
   if (sortedPathsResult.error) {
-    console.log(createCycleError(sortedPathsResult.error.map(absoluteFilePath => path.relative(entryDir, absoluteFilePath))));
+    console.error(createCycleError(sortedPathsResult.error.map(absoluteFilePath => path.relative(entryDir, absoluteFilePath))));
     process.exit(1);
   }
   let sortedPaths = sortedPathsResult.ok;
@@ -130,8 +131,12 @@ export let build = (entryDir) => {
   // Typecheck modules
   for (const absoluteFilePath of sortedPaths) {
     let module = modules.get(absoluteFilePath);
-    let tModule = Typecheck.inferModule(module, moduleInterfaces);
-    moduleInterfaces.set(absoluteFilePath, tModule.exports);
+    Result.cata(Typecheck.inferModule(module, moduleInterfaces), (tModule) => {
+      moduleInterfaces.set(absoluteFilePath, tModule.exports);
+    }, (error) => {
+      console.error(Typecheck.renderError(error, module));
+      process.exit(1);
+    });
   }
 
   console.log("No errors, all good!");

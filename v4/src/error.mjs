@@ -1,5 +1,9 @@
 import chalk from 'chalk';
 
+export let operator = (s) => chalk.green('(' + s + ')');
+export let type = (s) => chalk.yellow(s);
+export let hint = (s) => chalk.underline('Hint') + `: ${s}`;
+
 export let stack = (style, items) => {
   let { spacing = 1 } = style || {};
   const separator = '\n'.repeat(spacing);
