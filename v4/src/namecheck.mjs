@@ -205,6 +205,27 @@ const processArrayExpression = (node, errorRenderer) => {
   });
 };
 
+const processArrowFunctionExpression = (node, errorRenderer) => {
+  node.params.forEach((param) => {
+    switch (param.type) {
+      case "Identifier": {
+        declareVariable(param.name, param, errorRenderer);
+        break;
+      }
+      default: {
+        reportError(errorRenderer.renderUnsupportedError(param));
+        break;
+      }
+    }
+  });
+  processNode(node.body, errorRenderer);
+};
+
+const processCallExpression = (node, errorRenderer) => {
+  processNode(node.callee, errorRenderer);
+  node.arguments.forEach((arg) => processNode(arg, errorRenderer));
+};
+
 const processImportDeclaration = (node, errorRenderer) => {
   node.specifiers.forEach((specifier) => {
     switch (specifier.type) {
@@ -260,7 +281,24 @@ const processNode = (node, errorRenderer) => {
       processArrayExpression(node, errorRenderer);
       break;
 
+    case "ArrowFunctionExpression": {
+      scopes.push(new Map());
+      processArrowFunctionExpression(node, errorRenderer);
+      scopes.pop();
+      break;
+    }
+
+    case "CallExpression": {
+      processCallExpression(node, errorRenderer);
+      break;
+    }
+
+    case "ExpressionStatement":
+      processNode(node.expression, errorRenderer);
+      break;
+
     default:
+      console.log("unsuported", node);
       reportError(errorRenderer.renderUnsupportedError(node));
       break;
   }

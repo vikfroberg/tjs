@@ -161,4 +161,43 @@ suite("Namecheck", function () {
       assert.deepEqual(checkProgram(program).errors, null),
     );
   });
+  test("Arrow functions and function calls", function () {
+    [
+      `const fn = (x, y) => x + y`,
+      `const add = (x, y) => x + y
+        const sub = (x, y) => x - y
+        `,
+      `const add = (x, y) => x + y
+          const alsoAdd = (x, y) => add(x, y)
+          `,
+      `const x = 1
+      const fn = (y) => y + 1
+          fn(x)
+          `,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, null),
+    );
+    // Should report error
+    [
+      `const fn = (x) => x + y`,
+      `fn(true)`,
+      `const id = (x) => x
+      id(y)`,
+      `const a = (x) => x + 12
+      const b = x + 13`,
+      `const a = (x) => x + 12
+      const b = (y) => x+ 13`,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+    );
+    [
+      `let x = true
+      const fn = (x) => x`,
+    ].forEach((program) =>
+      assert.deepEqual(
+        checkProgram(program).errors,
+        "DuplicateDeclarationError",
+      ),
+    );
+  });
 });
