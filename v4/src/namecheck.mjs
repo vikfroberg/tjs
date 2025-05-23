@@ -189,6 +189,12 @@ const processExportDefaultDeclaration = (node, errorRenderer) => {
   processNode(node.declaration, errorRenderer);
 };
 
+const processObjectExpression = (node, errorRenderer) => {
+  node.properties.forEach((prop) => {
+    processNode(prop.value, errorRenderer);
+  });
+};
+
 const processImportDeclaration = (node, errorRenderer) => {
   node.specifiers.forEach((specifier) => {
     switch (specifier.type) {
@@ -234,6 +240,10 @@ const processNode = (node, errorRenderer) => {
 
     case "ImportDeclaration":
       processImportDeclaration(node, errorRenderer);
+      break;
+
+    case "ObjectExpression":
+      processObjectExpression(node, errorRenderer);
       break;
 
     default:

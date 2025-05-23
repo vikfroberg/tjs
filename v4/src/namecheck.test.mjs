@@ -113,4 +113,28 @@ suite("Namecheck", function () {
       ),
     );
   });
+  test("Records", function () {
+    // Should error out
+    [`let x = { y }`].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+    );
+    [
+      `let x = 4
+      const { x } = { x: 5 }`,
+    ].forEach((program) =>
+      assert.deepEqual(
+        checkProgram(program).errors,
+        "DuplicateDeclarationError",
+      ),
+    );
+    // Should not error out
+    [
+      `let y = 5;
+      let x = { y }`,
+      `let x = 4
+      const { x: y } = { x: 5 }`,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, null),
+    );
+  });
 });
