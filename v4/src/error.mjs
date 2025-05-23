@@ -1,20 +1,55 @@
+let MAX_WIDTH = 80;
+let INDENT_WIDTH = 4;
+
+export let stack = (style, items) => {
+  let { spacing = 1 } = style || {};
+  const separator = '\n'.repeat(spacing);
+  return items.join(separator);
+}
+
+export let header = (left, right) => {
+  return `-- ${left} ${"-".repeat(MAX_WIDTH - left.length - right.length - 5)} ${right}`;
+}
+
+export let reflow = (content) => {
+  const words = content.split(/\s+/);
+  const lines = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    if ((currentLine + word).length + (currentLine ? 1 : 0) <= MAX_WIDTH) {
+      currentLine += (currentLine ? ' ' : '') + word;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+
+  if (currentLine) lines.push(currentLine);
+
+  return lines.join('\n');
+};
+
+export let highlight = (line, location) => {
+  const caretLine = ' '.repeat(location.start.column) + '^'.repeat(Math.max(1, location.end.column - location.start.column));
+  return `${line}\n${caretLine}`;
+}
+
+export let indent = (line, indentWidth = INDENT_WIDTH) => {
+  return line.split('\n').map(line => " ".repeat(indentWidth) + line).join('\n');
+}
+
 export let createCycleError = (cycle) => {
   const formatted = cycle.join(' -> ');
   const first = cycle[0];
 
-  return `
-Cyclic Dependency Detected
-
-I found a cycle in your dependency graph:
-
-    ${formatted}
-
-This means that one of your modules is indirectly importing itself.
-Please check your imports and break the cycle.
-
-Hint: Start from the first module in the chain (${first})
-and trace where it leads.
-`.trim();
+  return stack({ spacing: 2 }, [
+    header('CYCLIC DEPENDENCY', first),
+    "I found a cycle in your dependency graph:",
+    indent(formatted),
+    "This means that one of your modules is indirectly importing itself.",
+    reflow(`Hint: Start from the first module in the chain \`${first}\` and trace where it leads.`),
+  ]);
 }
 
 export let createMissingModuleError = ({ filePath, import_, importPath }) => {

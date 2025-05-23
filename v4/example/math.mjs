@@ -1,4 +1,5 @@
 import { random } from './shared.mjs';
+import { name } from './index.mjs';
 
 let one = 1;
 let two = 2;

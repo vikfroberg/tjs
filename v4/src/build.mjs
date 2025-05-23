@@ -107,7 +107,7 @@ export let build = (entryDir) => {
   );
   const sortedPathsResult = DependencyGraph.topologicalSort(dependenciesGraph);
   if (sortedPathsResult.error) {
-    console.log(createCycleError(sortedPathsResult.error));
+    console.log(createCycleError(sortedPathsResult.error.map(absoluteFilePath => path.relative(entryDir, absoluteFilePath))));
     process.exit(1);
   }
   let sortedPaths = sortedPathsResult.ok;
