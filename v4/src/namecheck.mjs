@@ -160,6 +160,10 @@ const processVariableDeclaration = (node, errorRenderer) => {
         });
         break;
       }
+      default: {
+        reportError(errorRenderer.renderUnsupportedError(node));
+        break;
+      }
     }
   });
 };
@@ -192,6 +196,12 @@ const processExportDefaultDeclaration = (node, errorRenderer) => {
 const processObjectExpression = (node, errorRenderer) => {
   node.properties.forEach((prop) => {
     processNode(prop.value, errorRenderer);
+  });
+};
+
+const processArrayExpression = (node, errorRenderer) => {
+  node.elements.forEach((elem) => {
+    processNode(elem, errorRenderer);
   });
 };
 
@@ -244,6 +254,10 @@ const processNode = (node, errorRenderer) => {
 
     case "ObjectExpression":
       processObjectExpression(node, errorRenderer);
+      break;
+
+    case "ArrayExpression":
+      processArrayExpression(node, errorRenderer);
       break;
 
     default:

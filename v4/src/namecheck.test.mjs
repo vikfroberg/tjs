@@ -137,4 +137,28 @@ suite("Namecheck", function () {
       assert.deepEqual(checkProgram(program).errors, null),
     );
   });
+  test("Arrays", function () {
+    // Should error out
+    [`let x = [1, 2, y]`].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+    );
+    [
+      `let x = 4
+      const [ x ] = [ 5 ]`,
+    ].forEach((program) =>
+      assert.deepEqual(
+        checkProgram(program).errors,
+        "DuplicateDeclarationError",
+      ),
+    );
+    // Should not error out
+    [
+      `let y = 5;
+      let x = [ 2, y ]`,
+      `let x = 4
+      const [ y ] = [ 5 ]`,
+    ].forEach((program) =>
+      assert.deepEqual(checkProgram(program).errors, null),
+    );
+  });
 });
