@@ -1,14 +1,24 @@
 import path from 'path';
+import chalk from 'chalk';
+import { createUnificationError, createUnsupportedError, createInternalError } from './error.mjs';
+
+let currentRelativeFilePath = '';
+let currentSourceLines = [];
 
 let concreteType = (name) => ({ type: 'concrete', name });
+let createSum = (types) => ({ type: 'sum', types });
 let createModule = (exports) => ({ exports, });
 
-let unify = (t1, t2, subst, node) => {
-  if (t1 === t2) return;
-  if (t1.type === 'concrete' && t2.type === 'concrete' && t1.name === t2.name) return;
+let stringify = (t) => {
+  if (t.type === 'concrete') return t.name;
+  return t.name;
+}
 
-  console.log(createUnificationError(node, { expected: t1.name, actual: t2.name }));
-  process.exit(1);
+let unify = (t1, t2, subst) => {
+  if (t1 === t2) return { ok: true, subst };
+  if (t1.type === 'concrete' && t2.type === 'concrete' && t1.name === t2.name) return { ok: true, subst };
+
+  return { error: true, subst };
 }
 
 export let inferExpr = (node, env, subst = {}) => {
@@ -18,7 +28,34 @@ export let inferExpr = (node, env, subst = {}) => {
 
     case 'BinaryExpression':
       switch (node.operator) {
-        case '+':
+        case '+': {
+          const left = inferExpr(node.left, env, subst);
+          const right = inferExpr(node.right, env, subst);
+
+          let aside = `The ${chalk.green('(' + node.operator + ')')} operator only works with either ${chalk.yellow('string')} or ${chalk.yellow('number')}.`;
+          let hint = 'Casting is not allowed, like in regular JavaScript.';
+          if (left.type === 'concrete' && left.name === 'string') {
+            let tLeft = unify(concreteType('string'), left, subst)
+            let tRight = unify(concreteType('string'), right, subst)
+            let message = `I cannot perform ${chalk.green('(' + node.operator + ')')} with string and ${chalk.yellow(stringify(right))}:`;
+            if (tRight.error) {
+              console.error(createUnificationError(node.right, { hint, aside, message, expected: "string", actual: right.name, filePath: currentRelativeFilePath, sourceLines: currentSourceLines }));
+              process.exit(1);
+            } else {
+              return concreteType('string');
+            }
+          } else if (left.type === 'concrete' && left.name === 'number') {
+            let tLeft = unify(concreteType('number'), left, subst)
+            let tRight = unify(concreteType('number'), right, subst)
+            let message = `I cannot perform ${chalk.green('(' + node.operator + ')')} with ${chalk.yellow('number')} and ${chalk.yellow(stringify(right))}:`;
+            if (tRight.error) {
+              console.error(createUnificationError(node.right, { hint, aside, message, expected: "number", actual: right.name, filePath: currentRelativeFilePath, sourceLines: currentSourceLines }));
+              process.exit(1);
+            } else {
+              return concreteType('number');
+            }
+          }
+        }
         case '-':
         case '*':
         case '/':
@@ -29,21 +66,33 @@ export let inferExpr = (node, env, subst = {}) => {
         case '^':
         case '<<':
         case '>>':
-        case '>>>':
+        case '>>>': {
           const left = inferExpr(node.left, env, subst);
           const right = inferExpr(node.right, env, subst);
-          unify(concreteType('Number'), left, subst, node.left);
-          unify(concreteType('Number'), right, subst, node.right);
-          return concreteType('Number');
-        default:
+          let tLeft = unify(concreteType('number'), left, subst)
+          let tRight = unify(concreteType('number'), right, subst)
+          let aside = `The ${chalk.green('(' + node.operator + ')')} operator only works with numbers.`;
+          if (tLeft.error) {
+            let message = `I cannot perform (${node.operator}) with ${stringify(left)} values like this one:`;
+            console.error(createUnificationError(node.left, { hint, aside, message,  expected: "number", actual: left.name, filePath: currentRelativeFilePath, sourceLines: currentSourceLines }));
+            process.exit(1);
+          } else if (tRight.error) {
+            let message = `I cannot perform (${node.operator}) with ${stringify(right)} values like this one:`;
+            console.error(createUnificationError(node.right, { hint, aside, message, expected: "number", actual: right.name, filePath: currentRelativeFilePath, sourceLines: currentSourceLines }));
+            process.exit(1);
+          }
+          return concreteType('number');
+        }
+        default: {
           console.log(createUnsupportedError(node));
           process.exit(1);
+        }
       }
 
     case 'Literal':
-      if (typeof node.value === 'number') return concreteType('Number');
-      if (typeof node.value === 'string') return concreteType('String');
-      if (typeof node.value === 'boolean') return concreteType('Boolean');
+      if (typeof node.value === 'number') return concreteType('number');
+      if (typeof node.value === 'string') return concreteType('string');
+      if (typeof node.value === 'boolean') return concreteType('boolean');
       console.log(createUnsupportedError(node));
       process.exit(1);
 
@@ -54,6 +103,8 @@ export let inferExpr = (node, env, subst = {}) => {
 }
 
 export let inferModule = (module, moduleInterfaces, env = {}, subst = {}) => {
+  currentRelativeFilePath = module.relativeFilePath;
+  currentSourceLines = module.sourceLines;
   let exports = {};
   for (const node of module.ast.body) {
     if (node.type === 'VariableDeclaration') {

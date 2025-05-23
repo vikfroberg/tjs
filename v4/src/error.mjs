@@ -1,14 +1,13 @@
-let MAX_WIDTH = 80;
-let INDENT_WIDTH = 4;
+import chalk from 'chalk';
 
 export let stack = (style, items) => {
   let { spacing = 1 } = style || {};
   const separator = '\n'.repeat(spacing);
-  return items.join(separator);
+  return items.filter(Boolean).join(separator);
 }
 
 export let header = (left, right) => {
-  return `-- ${left} ${"-".repeat(MAX_WIDTH - left.length - right.length - 5)} ${right}`;
+  return chalk.cyan(`-- ${left} ${"-".repeat(process.stdout.columns - left.length - right.length - 5)} ${right}`);
 }
 
 export let reflow = (content) => {
@@ -17,7 +16,7 @@ export let reflow = (content) => {
   let currentLine = '';
 
   for (const word of words) {
-    if ((currentLine + word).length + (currentLine ? 1 : 0) <= MAX_WIDTH) {
+    if ((currentLine + word).length + (currentLine ? 1 : 0) <= process.stdout.columns) {
       currentLine += (currentLine ? ' ' : '') + word;
     } else {
       lines.push(currentLine);
@@ -30,12 +29,14 @@ export let reflow = (content) => {
   return lines.join('\n');
 };
 
-export let highlight = (line, location) => {
-  const caretLine = ' '.repeat(location.start.column) + '^'.repeat(Math.max(1, location.end.column - location.start.column));
-  return `${line}\n${caretLine}`;
+const numDigits = n => Math.abs(n).toString().length;
+
+export let highlightCode = (line, location) => {
+  const caretLine = ' '.repeat(location.start.column + 3 + numDigits(location.start.line)) + '^'.repeat(Math.max(1, location.end.column - location.start.column));
+  return `${location.start.line} | ${line}\n${chalk.red(caretLine)}`;
 }
 
-export let indent = (line, indentWidth = INDENT_WIDTH) => {
+export let indent = (line, indentWidth = 4) => {
   return line.split('\n').map(line => " ".repeat(indentWidth) + line).join('\n');
 }
 
@@ -155,24 +156,16 @@ export let createUnsupportedError = (node) => {
 }
 
 export let createUnificationError = (node, context = {}) => {
-  const { expected, actual, hint } = context;
-  const loc = node?.loc || { start: { line: 0, column: 0 }, end: { column: 1 } };
-  const line = sourceLines[loc.start.line - 1] || '';
-  const pointer =
-    ' '.repeat(loc.start.column) +
-    '^'.repeat(Math.max(1, loc.end.column - loc.start.column));
+  const { aside, message, expected, actual, hint, filePath, sourceLines } = context;
+  const loc = node.loc
 
-  return [
-    `-- TYPE MISMATCH ----------------------------------------- ${fileName}`,
-    '',
-    `I ran into a problem at line ${loc.start.line}, column ${loc.start.column}:`,
-    '',
-    `    ${line}`,
-    `    ${pointer}`,
-    '',
-    expected ? `Expected:\n    ${expected}` : '',
-    actual ? `But got:\n    ${actual}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  return chalk.white(stack({spacing: 2}, [
+    header('TYPE MISMATCH', filePath),
+    message,
+    stack({}, [
+      highlightCode(sourceLines[loc.start.line - 1], loc),
+      aside,
+    ]),
+    hint ? chalk.underline('Hint') + `: ${hint}` : undefined,
+  ]));
 }

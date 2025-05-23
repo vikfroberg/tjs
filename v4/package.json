@@ -9,6 +9,7 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
+    "chalk": "^5.4.1",
     "meriyah": "^6.0.6"
   },
   "devDependencies": {
