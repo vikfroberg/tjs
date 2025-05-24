@@ -27,13 +27,14 @@ export let renderError = (error, module) => {
   switch (error.type) {
     case 'unsupported': {
       return E.stack({ spacing: 2 }, [
-        E.header('UNSUPPORTED', error.node.type),
+        E.header('UNSUPPORTED', module.relativeFilePath),
         E.reflow("You used a feature that is not supported"),
         E.stack({}, [
           E.highlightCode(module.sourceLines[error.node.loc.start.line - 1], error.node.loc),
-          E.reflow("This feature is most likely not supported because it makes it harder to type check or it's encuraged to not be used."),
+          E.reflow("This feature is most likely not supported because it makes it harder to type check or it's encuraged not to be used."),
         ]),
-        E.reflow(`If you're a compiler developer you might want to know that this happened in the ${error.stage} stage.`),
+        process.env.NODE_ENV === 'development' ?
+          E.reflow(E.hint(`If you're a compiler developer you might want to know that this happened in the ${E.type(error.stage)} stage on node type ${E.type(error.node.type)}.`)) : undefined,
       ]);
     }
     case 'binaryExpressionMismatch': {
