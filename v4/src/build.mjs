@@ -118,10 +118,7 @@ export let build = (entryDir) => {
     let module = modules.get(absoluteFilePath);
     checkMissingExports(module, modules);
 
-    let namecheck = Namecheck.check(
-      module.ast,
-      Namecheck.errorRenderer(module),
-    );
+    let namecheck = Namecheck.check(module, Namecheck.errorRenderer(module));
     if (namecheck.errors) {
       console.log(namecheck.errors);
       process.exit(1);

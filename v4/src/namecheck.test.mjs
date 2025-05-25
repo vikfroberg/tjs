@@ -9,10 +9,20 @@ const errorRenderer = {
   renderUnsupportedError: (node) => "UnsupportedError",
 };
 
-const checkProgram = (program) => {
+const checkProgram = (program, exports = []) => {
   const ast = parseModule(program);
   const sourceLines = program.split("\n");
-  return Namecheck.check(ast, errorRenderer);
+  return Namecheck.check(
+    {
+      ast: ast,
+      source: program,
+      relativeFilePath: "./program.js",
+      absoluteFilePath: "/rootDir/src/program.js",
+      sourceLines: program.split("/n"),
+      exports: exports,
+    },
+    errorRenderer,
+  );
 };
 
 suite("Namecheck", function () {

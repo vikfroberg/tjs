@@ -84,6 +84,7 @@ let renderUnsupportedError = (programMeta) => {
 };
 
 // @todo: Move the rendering of errors out to a common file for errors for all phases
+// @todo: Remove programMeta, replace by threaded module from call place instead
 export const errorRenderer = (programMeta) => ({
   renderUndefinedVariableError: renderUndefinedVariableError(programMeta),
   renderDuplicateDeclarationError: renderDuplicateDeclarationError(programMeta),
@@ -120,29 +121,29 @@ const declareVariable = (name, node, errorRenderer) => {
   }
 };
 
-const processProgram = (node, errorRenderer) => {
+const processProgram = (node, module, errorRenderer) => {
   node.body.forEach((statement) => {
-    processNode(statement, errorRenderer);
+    processNode(statement, module, errorRenderer);
   });
 };
 
-const processIdentifier = (node, errorRenderer) => {
+const processIdentifier = (node, module, errorRenderer) => {
   if (!lookupVariable(node.name)) {
     reportError(errorRenderer.renderUndefinedVariableError(node));
   }
 };
 
-const processBinaryExpression = (node, errorRenderer) => {
-  processNode(node.left, errorRenderer);
-  processNode(node.right, errorRenderer);
+const processBinaryExpression = (node, module, errorRenderer) => {
+  processNode(node.left, module, errorRenderer);
+  processNode(node.right, module, errorRenderer);
 };
 
-const processVariableDeclaration = (node, errorRenderer) => {
+const processVariableDeclaration = (node, module, errorRenderer) => {
   node.declarations.forEach((declaration) => {
     switch (declaration.id.type) {
       case "Identifier": {
         declareVariable(declaration.id.name, declaration.id, errorRenderer);
-        processNode(declaration.init, errorRenderer);
+        processNode(declaration.init, module, errorRenderer);
         break;
       }
       case "ObjectPattern": {
@@ -168,17 +169,17 @@ const processVariableDeclaration = (node, errorRenderer) => {
   });
 };
 
-const processExportNamedDeclaration = (node, errorRenderer) => {
+const processExportNamedDeclaration = (node, module, errorRenderer) => {
   // When export declares new variables
   if (node.declaration) {
-    processNode(node.declaration, errorRenderer);
+    processNode(node.declaration, module, errorRenderer);
   }
 
   // When exporting already defined variables
   node.specifiers.forEach((specifier) => {
     switch (specifier.type) {
       case "ExportSpecifier": {
-        processNode(specifier.local, errorRenderer);
+        processNode(specifier.local, module, errorRenderer);
         break;
       }
       default: {
@@ -189,23 +190,23 @@ const processExportNamedDeclaration = (node, errorRenderer) => {
   });
 };
 
-const processExportDefaultDeclaration = (node, errorRenderer) => {
-  processNode(node.declaration, errorRenderer);
+const processExportDefaultDeclaration = (node, module, errorRenderer) => {
+  processNode(node.declaration, module, errorRenderer);
 };
 
-const processObjectExpression = (node, errorRenderer) => {
+const processObjectExpression = (node, module, errorRenderer) => {
   node.properties.forEach((prop) => {
-    processNode(prop.value, errorRenderer);
+    processNode(prop.value, module, errorRenderer);
   });
 };
 
-const processArrayExpression = (node, errorRenderer) => {
+const processArrayExpression = (node, module, errorRenderer) => {
   node.elements.forEach((elem) => {
-    processNode(elem, errorRenderer);
+    processNode(elem, module, errorRenderer);
   });
 };
 
-const processArrowFunctionExpression = (node, errorRenderer) => {
+const processArrowFunctionExpression = (node, module, errorRenderer) => {
   node.params.forEach((param) => {
     switch (param.type) {
       case "Identifier": {
@@ -218,15 +219,15 @@ const processArrowFunctionExpression = (node, errorRenderer) => {
       }
     }
   });
-  processNode(node.body, errorRenderer);
+  processNode(node.body, module, errorRenderer);
 };
 
-const processCallExpression = (node, errorRenderer) => {
-  processNode(node.callee, errorRenderer);
-  node.arguments.forEach((arg) => processNode(arg, errorRenderer));
+const processCallExpression = (node, module, errorRenderer) => {
+  processNode(node.callee, module, errorRenderer);
+  node.arguments.forEach((arg) => processNode(arg, module, errorRenderer));
 };
 
-const processImportDeclaration = (node, errorRenderer) => {
+const processImportDeclaration = (node, module, errorRenderer) => {
   node.specifiers.forEach((specifier) => {
     switch (specifier.type) {
       case "ImportDefaultSpecifier":
@@ -239,62 +240,62 @@ const processImportDeclaration = (node, errorRenderer) => {
   });
 };
 
-const processNode = (node, errorRenderer) => {
+const processNode = (node, module, errorRenderer) => {
   if (errors) return; // Only process up until first error
 
   switch (node.type) {
     case "Program":
-      processProgram(node, errorRenderer);
+      processProgram(node, module, errorRenderer);
       break;
     case "Identifier":
-      processIdentifier(node, errorRenderer);
+      processIdentifier(node, module, errorRenderer);
       break;
 
     case "BinaryExpression":
-      processBinaryExpression(node, errorRenderer);
+      processBinaryExpression(node, module, errorRenderer);
       break;
 
     case "VariableDeclaration":
-      processVariableDeclaration(node, errorRenderer);
+      processVariableDeclaration(node, module, errorRenderer);
       break;
 
     case "Literal":
       break;
 
     case "ExportNamedDeclaration":
-      processExportNamedDeclaration(node, errorRenderer);
+      processExportNamedDeclaration(node, module, errorRenderer);
       break;
 
     case "ExportDefaultDeclaration":
-      processExportDefaultDeclaration(node, errorRenderer);
+      processExportDefaultDeclaration(node, module, errorRenderer);
       break;
 
     case "ImportDeclaration":
-      processImportDeclaration(node, errorRenderer);
+      processImportDeclaration(node, module, errorRenderer);
       break;
 
     case "ObjectExpression":
-      processObjectExpression(node, errorRenderer);
+      processObjectExpression(node, module, errorRenderer);
       break;
 
     case "ArrayExpression":
-      processArrayExpression(node, errorRenderer);
+      processArrayExpression(node, module, errorRenderer);
       break;
 
     case "ArrowFunctionExpression": {
       scopes.push(new Map());
-      processArrowFunctionExpression(node, errorRenderer);
+      processArrowFunctionExpression(node, module, errorRenderer);
       scopes.pop();
       break;
     }
 
     case "CallExpression": {
-      processCallExpression(node, errorRenderer);
+      processCallExpression(node, module, errorRenderer);
       break;
     }
 
     case "ExpressionStatement":
-      processNode(node.expression, errorRenderer);
+      processNode(node.expression, module, errorRenderer);
       break;
 
     default:
@@ -304,12 +305,12 @@ const processNode = (node, errorRenderer) => {
   }
 };
 
-export const check = (ast, errorRenderer) => {
+export const check = (module, errorRenderer) => {
   // Reset globals
   errors = null;
   scopes = [new Map()];
 
-  processNode(ast, errorRenderer);
+  processNode(module.ast, module, errorRenderer);
 
   scopes.pop();
 
