@@ -118,11 +118,14 @@ export let build = (entryDir) => {
     let module = modules.get(absoluteFilePath);
     checkMissingExports(module, modules);
 
-    let namecheck = Namecheck.check(module, Namecheck.errorRenderer(module));
-    if (namecheck.errors) {
-      console.log(namecheck.errors);
-      process.exit(1);
-    }
+    Result.cata(
+      Namecheck.check(module),
+      (ok) => ok,
+      (error) => {
+        console.error(Namecheck.renderError(error, module));
+        process.exit(1);
+      },
+    );
   }
 
   // Typecheck modules

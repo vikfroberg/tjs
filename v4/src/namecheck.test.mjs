@@ -2,27 +2,19 @@ import { test, suite } from "node:test";
 import assert from "node:assert";
 import * as Namecheck from "./namecheck.mjs";
 import { parseModule } from "meriyah";
-
-const errorRenderer = {
-  renderUndefinedVariableError: (node_) => "UndefinedVariableError",
-  renderDuplicateDeclarationError: (node_) => "DuplicateDeclarationError",
-  renderUnsupportedError: (node) => "UnsupportedError",
-};
+import * as Result from "./result.mjs";
 
 const checkProgram = (program, exports = []) => {
   const ast = parseModule(program);
   const sourceLines = program.split("\n");
-  return Namecheck.check(
-    {
-      ast: ast,
-      source: program,
-      relativeFilePath: "./program.js",
-      absoluteFilePath: "/rootDir/src/program.js",
-      sourceLines: program.split("/n"),
-      exports: exports,
-    },
-    errorRenderer,
-  );
+  return Namecheck.check({
+    ast: ast,
+    source: program,
+    relativeFilePath: "./program.js",
+    absoluteFilePath: "/rootDir/src/program.js",
+    sourceLines: program.split("/n"),
+    exports: exports,
+  });
 };
 
 suite("Namecheck", function () {
@@ -39,14 +31,17 @@ suite("Namecheck", function () {
     const x = y
     `,
     ].forEach((program) =>
-      assert.deepEqual(
-        checkProgram(program).errors,
+      assert.strictEqual(
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
     // Should also error out
     [`const x = y + 5`, `let x = y + 5`, `var x = y + 5`].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+      assert.strictEqual(
+        Result.getError(checkProgram(program))?.type,
+        "UndefinedVariableError",
+      ),
     );
     // Should not error out
     [
@@ -54,7 +49,7 @@ suite("Namecheck", function () {
     let z = x * y
     `,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
   });
 
@@ -77,7 +72,7 @@ suite("Namecheck", function () {
     `,
     ].forEach((program) =>
       assert.deepEqual(
-        checkProgram(program).errors,
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
@@ -87,7 +82,7 @@ suite("Namecheck", function () {
     let x = 2;
     `,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
   });
 
@@ -99,7 +94,10 @@ suite("Namecheck", function () {
       `let y = 3;
       export { x as y }`,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+      assert.deepEqual(
+        Result.getError(checkProgram(program))?.type,
+        "UndefinedVariableError",
+      ),
     );
     // Should not error out
     [
@@ -109,7 +107,7 @@ suite("Namecheck", function () {
       `,
       `export default 47`,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
     // Should error out
     [
@@ -118,7 +116,7 @@ suite("Namecheck", function () {
       `,
     ].forEach((program) =>
       assert.deepEqual(
-        checkProgram(program).errors,
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
@@ -126,14 +124,17 @@ suite("Namecheck", function () {
   test("Records", function () {
     // Should error out
     [`let x = { y }`].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+      assert.deepEqual(
+        Result.getError(checkProgram(program))?.type,
+        "UndefinedVariableError",
+      ),
     );
     [
       `let x = 4
       const { x } = { x: 5 }`,
     ].forEach((program) =>
       assert.deepEqual(
-        checkProgram(program).errors,
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
@@ -144,20 +145,23 @@ suite("Namecheck", function () {
       `let x = 4
       const { x: y } = { x: 5 }`,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
   });
   test("Arrays", function () {
     // Should error out
     [`let x = [1, 2, y]`].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+      assert.deepEqual(
+        Result.getError(checkProgram(program))?.type,
+        "UndefinedVariableError",
+      ),
     );
     [
       `let x = 4
       const [ x ] = [ 5 ]`,
     ].forEach((program) =>
       assert.deepEqual(
-        checkProgram(program).errors,
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
@@ -168,7 +172,7 @@ suite("Namecheck", function () {
       `let x = 4
       const [ y ] = [ 5 ]`,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
   });
   test("Arrow functions and function calls", function () {
@@ -185,7 +189,7 @@ suite("Namecheck", function () {
           fn(x)
           `,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, null),
+      assert.deepEqual(checkProgram(program), Result.ok({})),
     );
     // Should report error
     [
@@ -198,14 +202,17 @@ suite("Namecheck", function () {
       `const a = (x) => x + 12
       const b = (y) => x+ 13`,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program).errors, "UndefinedVariableError"),
+      assert.deepEqual(
+        Result.getError(checkProgram(program))?.type,
+        "UndefinedVariableError",
+      ),
     );
     [
       `let x = true
       const fn = (x) => x`,
     ].forEach((program) =>
       assert.deepEqual(
-        checkProgram(program).errors,
+        Result.getError(checkProgram(program))?.type,
         "DuplicateDeclarationError",
       ),
     );
