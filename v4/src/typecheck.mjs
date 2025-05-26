@@ -1,6 +1,5 @@
 import path from 'path';
 import chalk from 'chalk';
-import { createUnificationError, createUnsupportedError, createInternalError } from './error.mjs';
 import { ok, error } from './result.mjs';
 import * as E from './error.mjs';
 import util from 'util';
@@ -33,6 +32,10 @@ export let tNumber = { type: 'number' };
 export let tBoolean = { type: 'boolean' };
 export let tFunN = (paramTypes, returnType) => ({ type: 'function', paramTypes, returnType });
 export let tModule = (exports) => ({ type: 'module', exports });
+export let tVar = (id) => ({ type: 'var', id });
+
+// Type schemes for polymorphism
+export let tScheme = (vars, type) => ({ type: 'scheme', vars, body: type });
 
 let typeVarCounter = 0;
 let freshTypeVar = () => {
@@ -40,6 +43,10 @@ let freshTypeVar = () => {
 }
 
 export let stringify = (t) => {
+  if (t.type === 'scheme') {
+    const varNames = t.vars.map(v => `'${String.fromCharCode(97 + (v.id % 26))}`).join(', ');
+    return `forall ${varNames}. ${stringify(t.body)}`;
+  }
   return t.type;
 }
 
@@ -128,7 +135,8 @@ export let renderError = (error, module) => {
 let occursInType = (tVar, type) => {
   switch (type.type) {
     case 'var': return tVar.id === type.id;
-    case 'funN': return type.paramsTypes.some(paramType => occursInType(tVar, paramType)) || occursInType(tVar, type.returnType);
+    case 'function': return type.paramTypes.some(paramType => occursInType(tVar, paramType)) || occursInType(tVar, type.returnType);
+    case 'scheme': return occursInType(tVar, type.body);
     default: return false;
   }
 }
@@ -137,14 +145,82 @@ let applySubst = (subst, type) => {
   switch (type.type) {
     case 'var':
       return subst[type.id] ? applySubst(subst, subst[type.id]) : type;
-    case 'funN':
+    case 'function':
       return tFunN(
         type.paramTypes.map(paramType => applySubst(subst, paramType)),
         applySubst(subst, type.returnType)
       );
+    case 'scheme':
+      // Don't substitute bound variables in schemes
+      const filteredSubst = { ...subst };
+      for (const tVar of type.vars) {
+        delete filteredSubst[tVar.id];
+      }
+      return tScheme(type.vars, applySubst(filteredSubst, type.body));
     default:
       return type;
   }
+}
+
+// Get free type variables in a type
+let freeTypeVars = (type) => {
+  switch (type.type) {
+    case 'var':
+      return new Set([type.id]);
+    case 'function':
+      const paramVars = type.paramTypes.reduce((acc, param) => 
+        new Set([...acc, ...freeTypeVars(param)]), new Set());
+      const returnVars = freeTypeVars(type.returnType);
+      return new Set([...paramVars, ...returnVars]);
+    case 'scheme':
+      const bodyVars = freeTypeVars(type.body);
+      const boundVars = new Set(type.vars.map(v => v.id));
+      return new Set([...bodyVars].filter(v => !boundVars.has(v)));
+    default:
+      return new Set();
+  }
+}
+
+// Get free type variables in environment
+let freeTypeVarsInEnv = (env) => {
+  const allVars = new Set();
+  for (const frame of env.stack) {
+    for (const [name, type] of Object.entries(frame)) {
+      const typeVars = freeTypeVars(type);
+      for (const v of typeVars) {
+        allVars.add(v);
+      }
+    }
+  }
+  return allVars;
+}
+
+// Generalize a type into a type scheme
+let generalize = (env, type) => {
+  const envVars = freeTypeVarsInEnv(env);
+  const typeVars = freeTypeVars(type);
+  const generalizedVars = [...typeVars].filter(v => !envVars.has(v));
+  
+  if (generalizedVars.length === 0) {
+    return type;
+  }
+  
+  const vars = generalizedVars.map(id => ({ type: 'var', id }));
+  return tScheme(vars, type);
+}
+
+// Instantiate a type scheme with fresh type variables
+let instantiate = (scheme) => {
+  if (scheme.type !== 'scheme') {
+    return scheme;
+  }
+  
+  const subst = {};
+  for (const tVar of scheme.vars) {
+    subst[tVar.id] = freshTypeVar();
+  }
+  
+  return applySubst(subst, scheme.body);
 }
 
 let unify = (t1, t2, subst = {}) => {
@@ -188,7 +264,13 @@ let unify = (t1, t2, subst = {}) => {
 export let inferExpr = (node, env, subst = {}) => {
   switch (node.type) {
     case 'Identifier': {
-      return ok(env.get(node.name));
+      const scheme = env.get(node.name);
+      if (!scheme) {
+        return error(unsupported(node, { stage: 'inferExpr.Identifier.undefined' }));
+      }
+      // Instantiate the type scheme
+      const type = instantiate(scheme);
+      return ok(type);
     }
 
     case 'UnaryExpression':
@@ -198,7 +280,6 @@ export let inferExpr = (node, env, subst = {}) => {
         case '-': {
           const right = inferExpr(node.argument, env, subst);
           if (right.error) return right;
-
           let number = unify(right.value, tNumber, subst);
           if (number.error) return error(unaryExpressionUnsupportedType(node, { types: [tNumber] }));
           return ok(tNumber);
@@ -206,7 +287,6 @@ export let inferExpr = (node, env, subst = {}) => {
         case '!': {
           const right = inferExpr(node.argument, env, subst);
           if (right.error) return right;
-
           let boolean = unify(right.value, tBoolean, subst);
           if (boolean.error) return error(unaryExpressionUnsupportedType(node, { types: [tBoolean] }));
           return ok(tBoolean);
@@ -234,12 +314,37 @@ export let inferExpr = (node, env, subst = {}) => {
           const right = inferExpr(node.right, env, subst);
           if (left.error) return left;
           if (right.error) return right;
-
           let same = unify(left.value, right.value, subst);
           if (same.error) return error(binaryExpressionMismatch(node, { types: [tNumber] }));
           let number = unify(left.value, tNumber, subst);
           if (number.error) return error(binaryExpressionUnsupportedType(node, { left: left.value, types: [tNumber] }));
-          return left;
+          return ok(tNumber);
+        }
+        case '<':
+        case '>':
+        case '<=':
+        case '>=': {
+          const left = inferExpr(node.left, env, subst);
+          const right = inferExpr(node.right, env, subst);
+          if (left.error) return left;
+          if (right.error) return right;
+          let same = unify(left.value, right.value, subst);
+          if (same.error) return error(binaryExpressionMismatch(node, { types: [tNumber] }));
+          let number = unify(left.value, tNumber, subst);
+          if (number.error) return error(binaryExpressionUnsupportedType(node, { left: left.value, types: [tNumber] }));
+          return ok(tBoolean);
+        }
+        case '==':
+        case '!=':
+        case '===':
+        case '!==': {
+          const left = inferExpr(node.left, env, subst);
+          const right = inferExpr(node.right, env, subst);
+          if (left.error) return left;
+          if (right.error) return right;
+          let same = unify(left.value, right.value, subst);
+          if (same.error) return error(binaryExpressionMismatch(node, { types: [tNumber, tString, tBoolean] }));
+          return ok(tBoolean);
         }
         default: {
           return error(unsupported(node, { stage: 'inferExpr.BinaryExpression' }));
@@ -282,7 +387,7 @@ export let inferExpr = (node, env, subst = {}) => {
       if (call.error) {
         switch (call.error.type) {
           case 'arityMismatch': {
-            return error(aiarityMismatch(node, { types: [tFunN(call.error.paramTypes, call.error.returnType)] }));
+            return error(arityMismatch(node, { types: [tFunN(call.error.paramTypes, call.error.returnType)] }));
           }
           case 'paramMismatch': {
             return error(paramMismatch(node, { types: [tFunN(call.error.paramTypes, call.error.returnType)] }));
@@ -294,6 +399,20 @@ export let inferExpr = (node, env, subst = {}) => {
       }
 
       return ok(applySubst(subst, returnType));
+    }
+
+    case 'ConditionalExpression': {
+      const test = inferExpr(node.test, env, subst);
+      if (test.error) return test;
+      let testUnify = unify(test.value, tBoolean, subst);
+      if (testUnify.error) return error(unsupported(node, { stage: 'inferExpr.ConditionalExpression.testNotBoolean' }));
+      const consequent = inferExpr(node.consequent, env, subst);
+      if (consequent.error) return consequent;
+      const alternate = inferExpr(node.alternate, env, subst);
+      if (alternate.error) return alternate;
+      let branchUnify = unify(consequent.value, alternate.value, subst);
+      if (branchUnify.error) return error(unsupported(node, { stage: 'inferExpr.ConditionalExpression.branchMismatch' }));
+      return ok(applySubst(subst, consequent.value));
     }
 
     case 'Literal': {
@@ -317,9 +436,15 @@ export let inferModule = (module, moduleInterfaces, env = new Env(), subst = {})
       for (const decl of node.declarations) {
         const name = decl.id.name;
         const expr = decl.init;
+        const selfTypeVar = freshTypeVar();
+        env.set(name, selfTypeVar);
         const type = inferExpr(expr, env, subst);
         if (type.error) return type;
-        env.set(name, type.value);
+        const unifyResult = unify(selfTypeVar, type.value, subst);
+        if (unifyResult.error) return error(unsupported(decl, { stage: 'inferModule.VariableDeclaration.recursion' }));
+        const finalType = applySubst(subst, selfTypeVar);
+        const generalizedType = generalize(env, finalType);
+        env.set(name, generalizedType);
       }
     } else if (node.type === 'ExportNamedDeclaration') {
       if (node.declaration) {
@@ -327,10 +452,16 @@ export let inferModule = (module, moduleInterfaces, env = new Env(), subst = {})
           for (const decl of node.declaration.declarations) {
             const name = decl.id.name;
             const expr = decl.init;
+            const selfTypeVar = freshTypeVar();
+            env.set(name, selfTypeVar);
             const type = inferExpr(expr, env, subst);
             if (type.error) return type;
-            env.set(name, type.value);
-            exports[name] = type.value;
+            const unifyResult = unify(selfTypeVar, type.value, subst);
+            if (unifyResult.error) return error(unsupported(decl, { stage: 'inferModule.ExportNamedDeclaration.recursion' }));
+            const finalType = applySubst(subst, selfTypeVar);
+            const generalizedType = generalize(env, finalType);
+            env.set(name, generalizedType);
+            exports[name] = generalizedType;
           }
         } else {
           return error(unsupported(node.declaration, { stage: 'inferModule.ExportNamedDeclaration' }));
@@ -339,8 +470,9 @@ export let inferModule = (module, moduleInterfaces, env = new Env(), subst = {})
     } else if (node.type === 'ExportDefaultDeclaration') {
       const type = inferExpr(node.declaration, env, subst);
       if (type.error) return type;
-      env.set('__default__', type.value);
-      exports['__default__'] = type.value;
+      const generalizedType = generalize(env, type.value);
+      env.set('__default__', generalizedType);
+      exports['__default__'] = generalizedType;
     } else if (node.type === 'ImportDeclaration') {
       const importedSource = path.resolve(path.dirname(module.absoluteFilePath), node.source.value);
       let importedInterface = moduleInterfaces.get(importedSource);
@@ -355,4 +487,3 @@ export let inferModule = (module, moduleInterfaces, env = new Env(), subst = {})
 
   return ok(tModule(exports));
 }
-

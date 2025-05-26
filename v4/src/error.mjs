@@ -164,18 +164,3 @@ export let createUnsupportedError = (node) => {
     'https://github.com/vikfroberg/tjs/blob/main/docs/unsupported.md',
   ].join('\n');
 }
-
-export let createUnificationError = (node, context = {}) => {
-  const { aside, message, expected, actual, hint, filePath, sourceLines } = context;
-  const loc = node.loc
-
-  return chalk.white(stack({spacing: 2}, [
-    header('TYPE MISMATCH', filePath),
-    message,
-    stack({}, [
-      highlightCode(sourceLines[loc.start.line - 1], loc),
-      aside,
-    ]),
-    hint ? chalk.underline('Hint') + `: ${hint}` : undefined,
-  ]));
-}

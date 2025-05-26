@@ -129,4 +129,39 @@ suite("Typecheck", () => {
     assert.deepEqual(env.get('g'), Typecheck.tFunN([Typecheck.tNumber, Typecheck.tNumber], Typecheck.tNumber));
     assert.deepEqual(env.get('z'), Typecheck.tNumber);
   });
+
+  test("polymorphic function", () => {
+    let source = `
+      let id = x => x;
+      let a = id(42);      // id: number -> number
+      let b = id("hello"); // id: string -> string
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    if (moduleT.error) return console.error(Typecheck.renderError(moduleT.value, module));
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get('id').type, "scheme");
+    assert.deepEqual(env.get('id').vars.length, 1);
+    assert.deepEqual(env.get('id').vars[0].type, "var");
+    let quantifiedVar = env.get('id').vars[0];
+    assert.deepEqual(env.get('id').body, Typecheck.tFunN([Typecheck.tVar(quantifiedVar.id)], Typecheck.tVar(quantifiedVar.id)));
+    assert.deepEqual(env.get('a'), Typecheck.tNumber);
+    assert.deepEqual(env.get('b'), Typecheck.tString);
+  });
+
+  test("recursive function", () => {
+    let source = `
+      let factorial = n => n <= 1 ? 1 : n * factorial(n - 1);
+      let a = factorial(5);
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    if (moduleT.error) return console.error(Typecheck.renderError(moduleT.value, module));
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get('a'), Typecheck.tNumber);
+  });
 });
