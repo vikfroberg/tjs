@@ -8,6 +8,7 @@ import * as Result from "./result.mjs";
  */
 let error = null;
 let scopes = new Map();
+let exports = new Map();
 
 const renderSourceLineWithPointer = (location, sourceLines) => {
   const line = sourceLines[location.start.line - 1] || "";
@@ -75,6 +76,22 @@ const renderDuplicateDeclarationError = ({ name, node1, node2 }, module) => {
     .join("\n");
 };
 
+const nameNotExportedError = (importNode, specifierNode, availableExports) => {
+  return {
+    type: "NameNotExportedError",
+    importNode,
+    specifierNode,
+    availableExports,
+  };
+};
+
+const renderNameNotExportedError = (
+  { importNode, specifierNode, availableExports },
+  module,
+) => {
+  return `TODO: Propper error message... Tried to import \`${specifierNode.imported.name}\` from file \`${importNode.resolvedModulePath}\`, but it's not exported.\nThese are available exports: \n\t${availableExports.map((s) => `\`${s}\``).join("\n\t")}`;
+};
+
 const unsupportedError = (node) => {
   return {
     type: "UnsupportedError",
@@ -108,6 +125,9 @@ export const renderError = (error, module) => {
     }
     case "DuplicateDeclarationError": {
       return renderDuplicateDeclarationError(error, module);
+    }
+    case "NameNotExportedError": {
+      return renderNameNotExportedError(error, module);
     }
     case "UnsupportedError": {
       return renderUnsupportedError(error, module);
@@ -250,10 +270,29 @@ const processCallExpression = (node, module) => {
 };
 
 const processImportDeclaration = (node, module) => {
+  const availableExports = exports.get(node.resolvedModulePath);
+
   node.specifiers.forEach((specifier) => {
+    if (error) return;
     switch (specifier.type) {
-      case "ImportDefaultSpecifier":
-      case "ImportSpecifier":
+      case "ImportDefaultSpecifier": {
+        if (!availableExports?.find((ident) => ident === "__default__")) {
+          reportError(nameNotExportedError(node, specifier, availableExports));
+          break;
+        }
+        declareVariable(specifier.local.name, specifier.local);
+        break;
+      }
+      case "ImportSpecifier": {
+        if (
+          !availableExports?.find((ident) => ident === specifier.imported.name)
+        ) {
+          reportError(nameNotExportedError(node, specifier, availableExports));
+          break;
+        }
+        declareVariable(specifier.local.name, specifier.local);
+        break;
+      }
       case "ImportNamespaceSpecifier": {
         declareVariable(specifier.local.name, specifier.local);
         break;
@@ -326,10 +365,11 @@ const processNode = (node, module) => {
   }
 };
 
-export const check = (module) => {
+export const check = (module, allExports) => {
   // Reset globals
   error = null;
   scopes = [new Map()];
+  exports = allExports;
 
   processNode(module.ast, module);
 

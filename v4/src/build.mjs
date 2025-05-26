@@ -29,62 +29,50 @@ let findJsFiles = (dir) => {
   return files;
 };
 
-let checkImportsExists = (absoluteFilePath, imports) => {
-  for (const import_ of imports) {
+let moduleInterfaces = new Map();
+
+// Resolve a modules import to absolute file path. Error if file doesn't exist
+let resolveImport = (currentFilesAbsolutePath) => {
+  return (source) => {
+    // Skip Node core modules or npm packages (i.e., bare specifiers)
+    if (!source.startsWith(".") && !source.startsWith("/")) {
+      return null;
+    }
+
     const resolvedPath = path.resolve(
-      path.dirname(absoluteFilePath),
-      import_.source,
+      path.dirname(currentFilesAbsolutePath),
+      source,
     );
+
     if (!fs.existsSync(resolvedPath)) {
-      console.log(
+      console.error(
         createMissingModuleError({
-          filePath,
-          importSource: import_.source,
+          filePath: currentFilesAbsolutePath,
+          importSource: source,
           resolvedPath,
         }),
       );
       process.exit(1);
     }
-  }
-};
 
-let checkMissingExports = (module, modules) => {
-  for (const import_ of module.imports) {
-    const importSourcePath = path.resolve(
-      path.dirname(module.absoluteFilePath),
-      import_.source,
-    );
-    const importedModule = modules.get(importSourcePath);
-    const exportedNames = new Set(importedModule.exports);
-    for (const spec of import_.specifiers) {
-      if (!exportedNames.has(spec.imported)) {
-        console.log(
-          createMissingExportError({
-            node: import_,
-            importSpec: spec,
-            filePath: module.absoluteFilePath,
-            importPath: importSourcePath,
-            availableExports: importedModule.exports,
-          }),
-        );
-        process.exit(1);
-      }
-    }
-  }
+    return resolvedPath;
+  };
 };
-
-let moduleInterfaces = new Map();
 
 export let build = (entryDir) => {
   let files = findJsFiles(entryDir);
+  let allExports = new Map();
   let modules = new Map(
     files.map((absoluteFilePath) => {
       let source = fs.readFileSync(absoluteFilePath, "utf8");
       let sourceLines = source.split("\n");
       let ast = Parse.fromString(source);
-      let imports = Ast.extractImports(ast);
-      checkImportsExists(absoluteFilePath, imports);
+      let imports = Ast.checkAndTagImports(
+        ast,
+        resolveImport(absoluteFilePath),
+      );
       let exports = Ast.extractExports(ast);
+      allExports.set(absoluteFilePath, exports);
       let relativeFilePath = path.relative(entryDir, absoluteFilePath);
       return [
         absoluteFilePath,
@@ -102,9 +90,7 @@ export let build = (entryDir) => {
   );
 
   const dependenciesGraph = modules.map((module) =>
-    module.imports.map((imp) =>
-      path.resolve(path.dirname(module.absoluteFilePath), imp.source),
-    ),
+    module.imports.map((imp) => imp.resolvedModulePath),
   );
   const sortedPathsResult = DependencyGraph.topologicalSort(dependenciesGraph);
   if (sortedPathsResult.error) {
@@ -116,10 +102,9 @@ export let build = (entryDir) => {
   // Namecheck modules
   for (const absoluteFilePath of sortedPaths) {
     let module = modules.get(absoluteFilePath);
-    checkMissingExports(module, modules);
 
     Result.cata(
-      Namecheck.check(module),
+      Namecheck.check(module, allExports),
       (ok) => ok,
       (error) => {
         console.error(Namecheck.renderError(error, module));

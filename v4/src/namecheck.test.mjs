@@ -3,18 +3,22 @@ import assert from "node:assert";
 import * as Namecheck from "./namecheck.mjs";
 import { parseModule } from "meriyah";
 import * as Result from "./result.mjs";
+import * as Ast from "./ast.mjs";
 
-const checkProgram = (program, exports = []) => {
+const checkProgram = (program, exports = new Map()) => {
   const ast = parseModule(program);
-  const sourceLines = program.split("\n");
-  return Namecheck.check({
-    ast: ast,
-    source: program,
-    relativeFilePath: "./program.js",
-    absoluteFilePath: "/rootDir/src/program.js",
-    sourceLines: program.split("/n"),
-    exports: exports,
-  });
+  Ast.checkAndTagImports(ast, (source) => source); // Add resolved module paths to AST nodes for imports
+  return Namecheck.check(
+    {
+      ast: ast,
+      source: program,
+      relativeFilePath: "./program.js",
+      absoluteFilePath: "/rootDir/src/program.js",
+      sourceLines: program.split("/n"),
+      exports: exports,
+    },
+    exports,
+  );
 };
 
 suite("Namecheck", function () {
@@ -54,6 +58,19 @@ suite("Namecheck", function () {
   });
 
   test("Import statements", function () {
+    // Shoulr error out
+    [
+      `import { x } from "test"`,
+      `import { y as x } from "test"`,
+      `import x from "test"`,
+    ].forEach((program) =>
+      assert.deepEqual(
+        Result.getError(
+          checkProgram(program, new Map([["test", ["X", "Y", "Z"]]])),
+        )?.type,
+        "NameNotExportedError",
+      ),
+    );
     // Should error out
     [
       `import { x } from "test"
@@ -72,7 +89,12 @@ suite("Namecheck", function () {
     `,
     ].forEach((program) =>
       assert.deepEqual(
-        Result.getError(checkProgram(program))?.type,
+        Result.getError(
+          checkProgram(
+            program,
+            new Map([["test", ["x", "y", "z", "__default__"]]]),
+          ),
+        )?.type,
         "DuplicateDeclarationError",
       ),
     );
@@ -82,7 +104,10 @@ suite("Namecheck", function () {
     let x = 2;
     `,
     ].forEach((program) =>
-      assert.deepEqual(checkProgram(program), Result.ok({})),
+      assert.deepEqual(
+        checkProgram(program, new Map([["test", ["x"]]])),
+        Result.ok({}),
+      ),
     );
   });
 

@@ -57,7 +57,11 @@ export let createCycleError = (cycle) => {
   ]);
 }
 
-export let createMissingModuleError = ({ filePath, import_, importPath }) => {
+export let createMissingModuleError = ({
+  filePath,
+  importSource,
+  resolvedPath,
+}) => {
   return `
 Missing Module Import
 
@@ -67,11 +71,11 @@ While processing:
 
 I could not resolve the following import:
 
-    import "${import_.source}"
+    import "${importSource}"
 
 It was expected to exist at:
 
-    ${importPath}
+    ${resolvedPath}
 
 But no module was found there.
 
