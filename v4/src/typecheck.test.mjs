@@ -164,4 +164,66 @@ suite("Typecheck", () => {
     assert.equal(moduleT.error, false);
     assert.deepEqual(env.get('a'), Typecheck.tNumber);
   });
+
+  test("comparison expression", () => {
+    let source = `
+      let a = 1 < 2;
+      let b = 1 <= 2;
+      let c = 1 > 2;
+      let d = 1 >= 2;
+      let e = 1 == 2;
+      let f = 1 != 2;
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    if (moduleT.error) return console.error(Typecheck.renderError(moduleT.value, module));
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get('a'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('b'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('c'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('d'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('e'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('f'), Typecheck.tBoolean);
+  });
+
+  test("comparison expression mismatch", () => {
+    let source = `
+      let a = 1 < "a";
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "binaryExpressionMismatch");
+  });
+
+  test("equality expression", () => {
+    let source = `
+      let a = 1 == 2;
+      let b = 1 != 2;
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    if (moduleT.error) return console.error(Typecheck.renderError(moduleT.value, module));
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get('a'), Typecheck.tBoolean);
+    assert.deepEqual(env.get('b'), Typecheck.tBoolean);
+  });
+
+  test("equality expression mismatch", () => {
+    let source = `
+      let a = 1 == "a";
+    `;
+    let module = { ast: parseModule(source, { loc: true, next: true }), sourceLines: source.split("\n"), relativeFilePath: "test.mjs" };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "binaryExpressionMismatch");
+  });
 });
