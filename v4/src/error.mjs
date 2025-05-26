@@ -10,17 +10,19 @@ export let stack = (style, items) => {
   return items.filter(Boolean).join(separator);
 }
 
-export let header = (left, right) => {
-  return chalk.cyan(`-- ${left} ${"-".repeat(process.stdout.columns - left.length - right.length - 5)} ${right}`);
+export let header = (left, right, columns) => {
+  let finalColumns = columns || process.stdout.columns || 80;
+  return chalk.cyan(`-- ${left} ${"-".repeat(finalColumns - left.length - right.length - 5)} ${right}`);
 }
 
-export let reflow = (content) => {
+export let reflow = (content, columns) => {
   const words = content.split(/\s+/);
   const lines = [];
   let currentLine = '';
+  let finalColumns = columns || process.stdout.columns || 80;
 
   for (const word of words) {
-    if ((currentLine + word).length + (currentLine ? 1 : 0) <= process.stdout.columns) {
+    if ((currentLine + word).length + (currentLine ? 1 : 0) <= finalColumns) {
       currentLine += (currentLine ? ' ' : '') + word;
     } else {
       lines.push(currentLine);
