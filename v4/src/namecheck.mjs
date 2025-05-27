@@ -1,4 +1,6 @@
 import * as Result from "./result.mjs";
+import * as E from "./error.mjs";
+import * as Levenstein from "./levenstein.mjs";
 /**
  * @todo
  * - Undefined import variables - Checking against index of exported variables per file
@@ -10,6 +12,10 @@ let error = null;
 let scopes = new Map();
 let exports = new Map();
 
+const getAllNamesInScope = () => {
+  return scopes.flatMap((scope) => Array.from(scope.keys()));
+};
+
 const renderSourceLineWithPointer = (location, sourceLines) => {
   const line = sourceLines[location.start.line - 1] || "";
   const pointer =
@@ -19,32 +25,28 @@ const renderSourceLineWithPointer = (location, sourceLines) => {
   return { line, pointer };
 };
 
-const undefinedVariableError = (node) => {
+const undefinedVariableError = (name, node) => {
+  let suggestions = Levenstein.search(name, getAllNamesInScope(), 2);
   return {
     type: "UndefinedVariableError",
+    name,
     node,
+    suggestions,
   };
 };
 
-let renderUndefinedVariableError = ({ node }, module) => {
-  // @todo: Add name suggestion, e.g. "Did you mean X"
-  const { sourceLines, absoluteFilePath } = module;
-  const loc = node?.loc || {
-    start: { line: 0, column: 0 },
-    end: { column: 1 },
-  };
-  const { line, pointer } = renderSourceLineWithPointer(loc, sourceLines);
-
-  return [
-    `-- UNDEFINED VARIABLE ------------------------------------ ${absoluteFilePath}`,
-    "",
-    `I tried to reference a variable that doesn't exist, at row ${loc.start.line}, column ${loc.start.column}:`,
-    "",
-    `    ${line}`,
-    `    ${pointer}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+let renderUndefinedVariableError = ({ node, suggestions }, module) => {
+  return E.stack({ spacing: 2 }, [
+    E.header("UNDEFINED VARIABLE", module.relativeFilePath),
+    E.stack({ spacing: 2 }, [
+      E.reflow(`Tried to reference a variable that doesn't exist`),
+      E.highlightCode(module.sourceLines[node.loc.start.line - 1], node.loc),
+    ]),
+    E.stack({ spacing: 2 }, [
+      E.reflow(`Maybe you ment one of these?`),
+      E.indent(E.stack({}, suggestions.slice(0, 5)), 2),
+    ]),
+  ]);
 };
 
 const duplicateDeclarationsError = (name, node1, node2) => {
@@ -57,23 +59,17 @@ const duplicateDeclarationsError = (name, node1, node2) => {
 };
 
 const renderDuplicateDeclarationError = ({ name, node1, node2 }, module) => {
-  const { sourceLines, absoluteFilePath } = module;
-  const sourcePointer1 = renderSourceLineWithPointer(node1.loc, sourceLines);
-  const sourcePointer2 = renderSourceLineWithPointer(node2.loc, sourceLines);
-  return [
-    `-- DUPLICATE VARIABLE DECLARATION ------------------------ ${absoluteFilePath}`,
-    "",
-    `Tried to declare a variable \`${name}\`, at row ${node1.loc.start.line}, column ${node1.loc.start.column}:`,
-    "",
-    `    ${sourcePointer1.line}`,
-    `    ${sourcePointer1.pointer}`,
-    `But the variable name was already used here, at row ${node2.loc.start.line}, column ${node2.loc.start.column}`,
-    `    ${sourcePointer2.line}`,
-    `    ${sourcePointer2.pointer}`,
-    `Please rename one of them to a unique name`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return E.stack({ spacing: 2 }, [
+    E.header("DUPLICATE VARIABLE DECLARATION", module.relativeFilePath),
+    E.stack({ spacing: 2 }, [
+      E.reflow(`Tried to declare a variable that was already declared:`),
+      E.highlightCode(module.sourceLines[node1.loc.start.line - 1], node1.loc),
+      E.reflow(`... but it was already declared here:`),
+      E.highlightCode(module.sourceLines[node2.loc.start.line - 1], node2.loc),
+    ]),
+    E.stack({ spacing: 2 }, []),
+    E.reflow("Try renaming one of them to something unique."),
+  ]);
 };
 
 const nameNotExportedError = (importNode, specifierNode, availableExports) => {
@@ -89,7 +85,22 @@ const renderNameNotExportedError = (
   { importNode, specifierNode, availableExports },
   module,
 ) => {
-  return `TODO: Propper error message... Tried to import \`${specifierNode.imported.name}\` from file \`${importNode.resolvedModulePath}\`, but it's not exported.\nThese are available exports: \n\t${availableExports.map((s) => `\`${s}\``).join("\n\t")}`;
+  return E.stack({ spacing: 2 }, [
+    E.header("VARIABLE NOT EXPORTED", module.relativeFilePath),
+    E.reflow(
+      `Variable is not exported from module: ${importNode.resolvedModulePath}`,
+    ),
+    E.stack({}, [
+      E.highlightCode(
+        module.sourceLines[specifierNode.loc.start.line - 1],
+        specifierNode.imported.loc,
+      ),
+      E.stack({ spacing: 2 }, [
+        E.reflow("Maybe you misstyped? Here are the available exports:"),
+        E.indent(E.stack({}, availableExports), 2),
+      ]),
+    ]),
+  ]);
 };
 
 const unsupportedError = (node) => {
@@ -101,21 +112,16 @@ const unsupportedError = (node) => {
 
 // @todo consolidate with other unsupported error message and have only one
 let renderUnsupportedError = ({ node }, module) => {
-  let { sourceLines, absoluteFilePath } = module;
-  let { line, pointer } = renderSourceLineWithPointer(node.loc, sourceLines);
-  return [
-    `-- UNSUPPORTED ERROR --------------------------------- ${absoluteFilePath}`,
-    "",
-    `You used a feature that is not suported (${node.type}).`,
-    "",
-    `    ${line}`,
-    `    ${pointer}`,
-    "",
-    "This feature is not allowed in TJS because it makes code harder to analyze and optimize.",
-    "",
-    "Instead, try to refactor your code to use a different feature. See the documentation for more information:",
-    "https://github.com/vikfroberg/tjs/blob/main/docs/unsupported.md",
-  ].join("\n");
+  return E.stack({ spacing: 2 }, [
+    E.header("UNSUPPORTED", module.relativeFilePath),
+    E.reflow("You used a feature that is not supported"),
+    E.stack({}, [
+      E.highlightCode(module.sourceLines[node.loc.start.line - 1], node.loc),
+      E.reflow(
+        "This feature is most likely not supported because it makes it harder to type check or it's encuraged not to be used.",
+      ),
+    ]),
+  ]);
 };
 
 export const renderError = (error, module) => {
@@ -171,7 +177,7 @@ const processProgram = (node, module) => {
 
 const processIdentifier = (node, module) => {
   if (!lookupVariable(node.name)) {
-    reportError(undefinedVariableError(node));
+    reportError(undefinedVariableError(node.name, node));
   }
 };
 
