@@ -34,6 +34,18 @@ suite("Namecheck", function () {
       `let x = 5, y = 2;
     const x = y
     `,
+      `let x = "hello"
+      let { fn } = { fn: () => {
+        let x = 1;
+        return x + 1;
+      }}
+      `,
+      `let x = "hello"
+      let [ fn ] = [() => {
+        let x = 1;
+        return x + 1;
+      }]
+      `,
     ].forEach((program) =>
       assert.strictEqual(
         Result.getError(checkProgram(program))?.type,

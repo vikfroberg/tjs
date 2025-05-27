@@ -194,6 +194,7 @@ const processVariableDeclaration = (node, module) => {
           const localName = prop.value.name;
           declareVariable(localName, prop.value);
         });
+        processNode(declaration.init, module);
         break;
       }
       case "ArrayPattern": {
@@ -201,6 +202,7 @@ const processVariableDeclaration = (node, module) => {
         elements.forEach((elem) => {
           declareVariable(elem.name, elem);
         });
+        processNode(declaration.init, module);
         break;
       }
       default: {
