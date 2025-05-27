@@ -352,6 +352,10 @@ const processNode = (node, module) => {
       break;
     }
 
+    case "ReturnStatement":
+      processNode(node.argument, module);
+      break;
+
     case "CallExpression": {
       processCallExpression(node, module);
       break;
@@ -359,6 +363,12 @@ const processNode = (node, module) => {
 
     case "ExpressionStatement":
       processNode(node.expression, module);
+      break;
+
+    case "BlockStatement":
+      // No need for creating a new scope? ...or?
+      // Thinking it's only used as function body where we just creted a scope for the funciton.
+      node.body.forEach((stmt) => processNode(stmt, module));
       break;
 
     default:

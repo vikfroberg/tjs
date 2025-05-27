@@ -225,6 +225,10 @@ suite("Namecheck", function () {
       const fn = (y) => y + 1
           fn(x)
           `,
+      `let z = 1
+        const fn = (x, y) => {
+          return x + y + z
+        }`,
     ].forEach((program) =>
       assert.deepEqual(checkProgram(program), Result.ok({})),
     );
