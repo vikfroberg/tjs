@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import * as Parse from "./parse.mjs";
 import * as Namecheck from "./namecheck.mjs";
-import * as Typecheck from "./typecheck.mjs";
+import * as Typecheck from "./typecheck";
 import * as Ast from "./ast.mjs";
 import * as DependencyGraph from "./dependencyGraph.mjs";
 import "./map.mjs";
@@ -94,7 +94,13 @@ export let build = (entryDir) => {
   );
   const sortedPathsResult = DependencyGraph.topologicalSort(dependenciesGraph);
   if (sortedPathsResult.error) {
-    console.error(createCycleError(sortedPathsResult.error.map(absoluteFilePath => path.relative(entryDir, absoluteFilePath))));
+    console.error(
+      createCycleError(
+        sortedPathsResult.error.map((absoluteFilePath) =>
+          path.relative(entryDir, absoluteFilePath),
+        ),
+      ),
+    );
     process.exit(1);
   }
   let sortedPaths = sortedPathsResult.ok;
@@ -116,12 +122,16 @@ export let build = (entryDir) => {
   // Typecheck modules
   for (const absoluteFilePath of sortedPaths) {
     let module = modules.get(absoluteFilePath);
-    Result.cata(Typecheck.inferModule(module, moduleInterfaces), (tModule) => {
-      moduleInterfaces.set(absoluteFilePath, tModule.exports);
-    }, (error) => {
-      console.error(Typecheck.renderError(error, module));
-      process.exit(1);
-    });
+    Result.cata(
+      Typecheck.inferModule(module, moduleInterfaces),
+      (tModule) => {
+        moduleInterfaces.set(absoluteFilePath, tModule.exports);
+      },
+      (error) => {
+        console.error(Typecheck.renderError(error, module));
+        process.exit(1);
+      },
+    );
   }
 
   console.log("No errors, all good!");
