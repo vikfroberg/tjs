@@ -291,4 +291,419 @@ suite("Typecheck", () => {
     assert.equal(moduleT.error, true);
     assert.equal(moduleT.value.type, "binaryExpressionMismatch");
   });
+
+  test("conditional expression", () => {
+    let source = `
+      let a = true ? 1 : 2;
+      let b = false ? "hello" : "world";
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tNumber);
+    assert.deepEqual(env.get("b"), Typecheck.tString);
+  });
+
+  test("conditional expression type mismatch", () => {
+    let source = `
+      let a = true ? 1 : "hello";
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+  });
+
+  test("nested conditional expression", () => {
+    let source = `
+      let a = true ? (false ? 1 : 2) : 3;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tNumber);
+  });
+
+  test("function call arity mismatch - too few arguments", () => {
+    let source = `
+      let f = (x, y) => x + y;
+      let a = f(1);
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "arityMismatch");
+  });
+
+  test("function call arity mismatch - too many arguments", () => {
+    let source = `
+      let f = (x) => x + 1;
+      let a = f(1, 2, 3);
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "arityMismatch");
+  });
+
+  test("function call parameter type mismatch", () => {
+    let source = `
+      let f = (x) => x + 1;
+      let a = f("hello");
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "paramMismatch");
+  });
+
+  test("function call multiple parameter type mismatch", () => {
+    let source = `
+      let f = (x, y) => x + y;
+      let a = f(1, "hello");
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "paramMismatch");
+  });
+
+  test("modulo operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("5 % 3").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("exponentiation operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("2 ** 3").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("bitwise OR operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("5 | 3").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("bitwise AND operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("5 & 3").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("bitwise XOR operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("5 ^ 3").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("left shift operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("5 << 2").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("right shift operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("20 >> 2").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("unsigned right shift operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("20 >>> 2").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("bitwise operator type mismatch", () => {
+    let source = "'hello' | 3";
+    let node = parseModule(source, { loc: true, next: true }).body[0]
+      .expression;
+    let actual = Typecheck.inferExpr(node);
+    let expected = Result.error(
+      Typecheck.binaryExpressionMismatch(node, {
+        types: [Typecheck.tNumber],
+      }),
+    );
+    assert.deepEqual(actual, expected);
+  });
+
+  test("strict equality operator", () => {
+    let source = `
+      let a = 1 === 1;
+      let b = "hello" === "world";
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tBoolean);
+    assert.deepEqual(env.get("b"), Typecheck.tBoolean);
+  });
+
+  test("strict inequality operator", () => {
+    let source = `
+      let a = 1 !== 2;
+      let b = "hello" !== "world";
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tBoolean);
+    assert.deepEqual(env.get("b"), Typecheck.tBoolean);
+  });
+
+  test("strict equality type mismatch", () => {
+    let source = `
+      let a = 1 === "hello";
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "binaryExpressionMismatch");
+  });
+
+  test("bitwise NOT operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("~5").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("unary plus operator", () => {
+    let expected = Result.ok(Typecheck.tNumber);
+    let actual = Typecheck.inferExpr(parseModule("+5").body[0].expression);
+    assert.deepEqual(actual, expected);
+  });
+
+  test("bitwise NOT unsupported type", () => {
+    let source = "~'hello'";
+    let node = parseModule(source, { loc: true, next: true }).body[0]
+      .expression;
+    let actual = Typecheck.inferExpr(node);
+    let expected = Result.error(
+      Typecheck.unaryExpressionUnsupportedType(node, {
+        types: [Typecheck.tNumber],
+      }),
+    );
+    assert.deepEqual(actual, expected);
+  });
+
+  test("unary plus unsupported type", () => {
+    let source = "+'hello'";
+    let node = parseModule(source, { loc: true, next: true }).body[0]
+      .expression;
+    let actual = Typecheck.inferExpr(node);
+    let expected = Result.error(
+      Typecheck.unaryExpressionUnsupportedType(node, {
+        types: [Typecheck.tNumber],
+      }),
+    );
+    assert.deepEqual(actual, expected);
+  });
+
+  test("complex nested arithmetic", () => {
+    let source = `
+      let a = ((1 + 2) * 3) - (4 / 2);
+      let b = 2 ** (3 + 1) % 5;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tNumber);
+    assert.deepEqual(env.get("b"), Typecheck.tNumber);
+  });
+
+  test("complex nested function calls", () => {
+    let source = `
+      let add = (x, y) => x + y;
+      let multiply = (x, y) => x * y;
+      let result = add(multiply(2, 3), multiply(4, 5));
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("result"), Typecheck.tNumber);
+  });
+
+  test("higher-order functions", () => {
+    let source = `
+      let apply = (f, x) => f(x);
+      let double = x => x * 2;
+      let result = apply(double, 5);
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("result"), Typecheck.tNumber);
+  });
+
+  test("logical AND operator", () => {
+    let source = `
+      let a = true && false;
+      let b = true && true;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tBoolean);
+    assert.deepEqual(env.get("b"), Typecheck.tBoolean);
+  });
+
+  test("logical OR operator", () => {
+    let source = `
+      let a = true || false;
+      let b = false || false;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tBoolean);
+    assert.deepEqual(env.get("b"), Typecheck.tBoolean);
+  });
+
+  test("logical operator type mismatch", () => {
+    let source = `
+      let a = 1 && true;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, true);
+    assert.equal(moduleT.value.type, "binaryExpressionUnsupportedType");
+  });
+
+  test("mixed operators precedence", () => {
+    let source = `
+      let a = 1 + 2 * 3;
+      let b = (1 + 2) * 3;
+      let c = 1 < 2 && 3 > 2;
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tNumber);
+    assert.deepEqual(env.get("b"), Typecheck.tNumber);
+    assert.deepEqual(env.get("c"), Typecheck.tBoolean);
+  });
+
+  test("polymorphic function complex usage", () => {
+    let source = `
+      let first = (x, y) => x;
+      let a = first(42, "hello");
+      let b = first("world", 99);
+      let c = first(true, false);
+    `;
+    let module = {
+      ast: parseModule(source, { loc: true, next: true }),
+      sourceLines: source.split("\n"),
+      relativeFilePath: "test.mjs",
+    };
+    let env = new Typecheck.Env();
+    let interfaces = new Map();
+    let moduleT = Typecheck.inferModule(module, interfaces, env);
+    assert.equal(moduleT.error, false);
+    assert.deepEqual(env.get("a"), Typecheck.tNumber);
+    assert.deepEqual(env.get("b"), Typecheck.tString);
+    assert.deepEqual(env.get("c"), Typecheck.tBoolean);
+  });
 });
