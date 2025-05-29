@@ -1,4 +1,4 @@
-import * as E from "../error.mjs";
+import * as E from "../../error.mjs";
 
 export let unsupported = (node, context) => ({
   type: "unsupported",

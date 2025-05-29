@@ -2,6 +2,9 @@ let formatN = (n) =>
   n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
 let pluralize = (word, count) => (count === 1 ? word : word + "s");
 
+import * as E from "../../error.mjs";
+import { stringify } from "../types/data.mjs";
+
 export let renderError = (error, module) => {
   switch (error.type) {
     case "unsupported": {

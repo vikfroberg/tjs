@@ -1,8 +1,11 @@
+import * as T from "./data.mjs";
+import { applySubst } from "./unfify.mjs";
+
 let freeTypeVarsInEnv = (env) => {
   const allVars = new Set();
   for (const frame of env.stack) {
     for (const [name, type] of Object.entries(frame)) {
-      const typeVars = freeTypeVars(type);
+      const typeVars = T.freeTypeVars(type);
       for (const v of typeVars) {
         allVars.add(v);
       }
@@ -11,9 +14,9 @@ let freeTypeVarsInEnv = (env) => {
   return allVars;
 };
 
-let generalize = (env, type) => {
+export let generalize = (env, type) => {
   const envVars = freeTypeVarsInEnv(env);
-  const typeVars = freeTypeVars(type);
+  const typeVars = T.freeTypeVars(type);
   const generalizedVars = [...typeVars].filter((v) => !envVars.has(v));
 
   if (generalizedVars.length === 0) {
@@ -24,7 +27,7 @@ let generalize = (env, type) => {
   return T.scheme(vars, type);
 };
 
-let instantiate = (scheme) => {
+export let instantiate = (scheme) => {
   if (scheme.type !== "scheme") {
     return scheme;
   }

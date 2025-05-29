@@ -1,3 +1,6 @@
+import { ok, error } from "../../result.mjs";
+import * as T from "./data.mjs";
+
 export let applySubst = (subst, type) => {
   switch (type.type) {
     case "var":
@@ -27,7 +30,7 @@ export let unify = (t1, t2, subst = {}) => {
     if (t1.id === t2.id) {
       return ok(subst);
     } else {
-      if (occursInType(t1, t2)) return error({ type: "occursCheck", subst });
+      if (T.occursInType(t1, t2)) return error({ type: "occursCheck", subst });
       subst[t1.id] = t2;
       return ok(subst);
     }

@@ -1,17 +1,25 @@
-import inferExpr from "./expr.mjs";
+import path from "path";
+import { ok, error } from "../../result.mjs";
+import * as T from "../types/data.mjs";
+import { applySubst, unify } from "../types/unfify.mjs";
+import { generalize, instantiate } from "../types/generalize.mjs";
+import Env from "../env.mjs";
+import inferExpr from "./expression.mjs";
+import {
+  unsupported,
+} from "../errors/data.mjs";
 
 /* MODULES ---------------------------------------- */
 
 export default function inferModule(
-  module,
+  mod,
   moduleInterfaces,
   env = new Env(),
   subst = {},
 ) {
   let exports = {};
 
-  for (const node of module.ast.body) {
-    console.log(node);
+  for (const node of mod.ast.body) {
     if (node.type === "VariableDeclaration") {
       let result = inferVariableDeclaration(node, env, subst);
       if (result.error) return result;
@@ -22,7 +30,7 @@ export default function inferModule(
       let result = inferExportDefaultDeclaration(node, env, subst, exports);
       if (result.error) return result;
     } else if (node.type === "ImportDeclaration") {
-      let result = inferImportDeclaration(node, env, subst);
+      let result = inferImportDeclaration(node, env, subst, mod, moduleInterfaces);
       if (result.error) return result;
     } else {
       return error(unsupported(node, { stage: "inferModule" }));
@@ -53,7 +61,7 @@ function inferVariableDeclaration(node, env, subst) {
     const generalizedType = generalize(env, finalType);
     env.set(name, generalizedType);
   }
-  return ok();
+  return ok(undefined);
 }
 
 /* EXPORTS ---------------------------------------- */
@@ -88,7 +96,7 @@ function inferExportNamedDeclaration(node, env, subst, exports) {
       );
     }
   }
-  return ok();
+  return ok(undefined);
 }
 
 function inferExportDefaultDeclaration(node, env, subst, exports) {
@@ -97,14 +105,14 @@ function inferExportDefaultDeclaration(node, env, subst, exports) {
   const generalizedType = generalize(env, type.value);
   env.set("__default__", generalizedType);
   exports["__default__"] = generalizedType;
-  return ok();
+  return ok(undefined);
 }
 
 /* IMPORTS ---------------------------------------- */
 
-function inferImportDeclaration(node, env, subst) {
+function inferImportDeclaration(node, env, subst, mod, moduleInterfaces) {
   const importedSource = path.resolve(
-    path.dirname(module.absoluteFilePath),
+    path.dirname(mod.absoluteFilePath),
     node.source.value,
   );
   let importedInterface = moduleInterfaces.get(importedSource);
@@ -112,5 +120,5 @@ function inferImportDeclaration(node, env, subst) {
     const type = importedInterface[spec.imported.name];
     env.set(spec.local.name, type);
   }
-  return ok();
+  return ok(undefined);
 }

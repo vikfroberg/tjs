@@ -1,3 +1,16 @@
+import { ok, error } from "../../result.mjs";
+import * as T from "../types/data.mjs";
+import { applySubst, unify } from "../types/unfify.mjs";
+import { generalize, instantiate } from "../types/generalize.mjs";
+import {
+  unsupported,
+  binaryExpressionMismatch,
+  binaryExpressionUnsupportedType,
+  unaryExpressionUnsupportedType,
+  arityMismatch,
+  paramMismatch,
+} from "../errors/data.mjs";
+
 /* EXPRESSIONS ---------------------------------------- */
 
 export default function inferExpr(node, env, subst = {}) {

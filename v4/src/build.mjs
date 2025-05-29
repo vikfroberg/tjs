@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import * as Parse from "./parse.mjs";
 import * as Namecheck from "./namecheck.mjs";
-import * as Typecheck from "./typecheck";
+import * as Typecheck from "./typecheck/index.mjs";
 import * as Ast from "./ast.mjs";
 import * as DependencyGraph from "./dependencyGraph.mjs";
 import "./map.mjs";
