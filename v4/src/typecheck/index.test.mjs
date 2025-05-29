@@ -127,8 +127,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(
       env.get("f"),
@@ -152,8 +150,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(
       env.get("f"),
@@ -187,8 +183,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(env.get("id").type, "scheme");
     assert.deepEqual(env.get("id").vars.length, 1);
@@ -218,8 +212,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(env.get("a"), Typecheck.tNumber);
   });
@@ -241,8 +233,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(env.get("a"), Typecheck.tBoolean);
     assert.deepEqual(env.get("b"), Typecheck.tBoolean);
@@ -264,7 +254,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    console.log(moduleT);
     assert.equal(moduleT.error, true);
     assert.equal(moduleT.value.type, "binaryExpressionMismatch");
   });
@@ -282,8 +271,6 @@ suite("Typecheck", () => {
     let env = new Typecheck.Env();
     let interfaces = new Map();
     let moduleT = Typecheck.inferModule(module, interfaces, env);
-    if (moduleT.error)
-      return console.error(Typecheck.renderError(moduleT.value, module));
     assert.equal(moduleT.error, false);
     assert.deepEqual(env.get("a"), Typecheck.tBoolean);
     assert.deepEqual(env.get("b"), Typecheck.tBoolean);
