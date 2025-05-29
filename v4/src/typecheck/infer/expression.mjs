@@ -24,6 +24,9 @@ export default function inferExpr(node, env, subst = {}) {
     case "BinaryExpression":
       return inferBinaryExpression(node, env, subst);
 
+    case "LogicalExpression":
+      return inferLogicalExpression(node, env, subst);
+
     case "ArrowFunctionExpression":
       return inferArrowFunctionExpression(node, env, subst);
 
@@ -166,6 +169,41 @@ function inferBinaryExpressionEquality(node, env, subst) {
     return error(
       binaryExpressionMismatch(node, {
         types: [T.number, T.string, T.bool],
+      }),
+    );
+  return ok(T.bool);
+}
+
+function inferLogicalExpression(node, env, subst) {
+  switch (node.operator) {
+    case "&&":
+    case "||":
+      return inferLogicalExpressionBoolean(node, env, subst);
+    default: {
+      return error(unsupported(node, { stage: "inferExpr.LogicalExpression" }));
+    }
+  }
+}
+
+function inferLogicalExpressionBoolean(node, env, subst) {
+  const left = inferExpr(node.left, env, subst);
+  const right = inferExpr(node.right, env, subst);
+  if (left.error) return left;
+  if (right.error) return right;
+  let leftBool = unify(left.value, T.bool, subst);
+  if (leftBool.error)
+    return error(
+      binaryExpressionUnsupportedType(node, {
+        left: left.value,
+        types: [T.bool],
+      }),
+    );
+  let rightBool = unify(right.value, T.bool, subst);
+  if (rightBool.error)
+    return error(
+      binaryExpressionUnsupportedType(node, {
+        left: right.value,
+        types: [T.bool],
       }),
     );
   return ok(T.bool);
