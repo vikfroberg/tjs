@@ -2,6 +2,7 @@
   "name": "tjs",
   "version": "0.0.0",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "node --test",
     "start": "node index.mjs example",
@@ -13,7 +14,9 @@
   "description": "",
   "dependencies": {
     "chalk": "^5.4.1",
-    "meriyah": "^6.0.6"
+    "meriyah": "^6.0.6",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   },
   "devDependencies": {
     "cli-sandbox": "^1.0.0",

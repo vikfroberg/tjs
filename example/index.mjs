@@ -1,5 +1,5 @@
 import { sum } from "./math.mjs";
 
-export let name = "Viktor";
+export let sname = "Viktor";
 
 export default sum;
