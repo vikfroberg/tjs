@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "sandbox": "sandbox",
+    "sandbox:watch": "sandbox --watch"
   },
   "author": "",
   "license": "MIT",
@@ -13,6 +15,7 @@
     "meriyah": "^6.0.6"
   },
   "devDependencies": {
+    "cli-sandbox": "^1.0.0",
     "@types/node": "^22.15.20",
     "typescript": "^5.8.3"
   }
