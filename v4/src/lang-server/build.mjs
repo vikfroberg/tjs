@@ -11,6 +11,36 @@ import {
   createCycleError,
 } from "../error.mjs";
 import * as Result from "../result.mjs";
+import fs from "fs";
+
+export let findJsFiles = (dir) => {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files = [];
+
+  for (const entry of entries) {
+    const absoluteFilePath = path.resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(findJsFiles(absoluteFilePath));
+    } else if (entry.name.endsWith(".js") || entry.name.endsWith(".mjs")) {
+      files.push(absoluteFilePath);
+    }
+  }
+
+  return files;
+};
+
+export let buildModulesFromDir = (dir) => {
+  const moduleProvider = (path) => fs.existsSync(path);
+  const importResolver = createImportResolver(moduleProvider);
+  
+  const modules = findJsFiles(dir).map(file => {
+    const source = fs.readFileSync(file, "utf8");
+    const module = createModuleFromSource(source, file, dir, importResolver);
+    return [file, module];
+  });
+  
+  return new Map(modules);
+};
 
 // Core module processing functions
 
@@ -66,7 +96,7 @@ export let buildDependencyGraph = (modules) => {
     dependenciesGraph.set(filePath, module.imports.map((imp) => imp.resolvedModulePath));
   }
   const sortResult = DependencyGraph.topologicalSort(dependenciesGraph);
-  
+
   // Convert to consistent Result format
   if (sortResult.error) {
     return Result.error(sortResult.error);
@@ -84,10 +114,10 @@ export let createModuleFromSource = (source, filePath, entryDir, importResolver)
 
 export let processModule = (source, filePath, entryDir, dependencies) => {
   const { moduleProvider, allExports, moduleInterfaces } = dependencies;
-  
+
   const importResolver = createImportResolver(moduleProvider);
   const module = createModuleFromSource(source, filePath, entryDir, importResolver);
-  
+
   // Namecheck
   const namecheckResult = namecheckModule(module, allExports);
   if (namecheckResult.error) {
@@ -97,7 +127,7 @@ export let processModule = (source, filePath, entryDir, dependencies) => {
       module
     });
   }
-  
+
   // Typecheck
   const typecheckResult = typecheckModule(module, moduleInterfaces);
   if (typecheckResult.error) {
@@ -107,7 +137,7 @@ export let processModule = (source, filePath, entryDir, dependencies) => {
       module
     });
   }
-  
+
   return Result.ok({
     module,
     typedModule: typecheckResult.ok
@@ -130,7 +160,7 @@ export let createModuleInterface = (typedModule) => {
 
 export let validateModuleExports = (modules, allExports) => {
   const errors = [];
-  
+
   for (const [filePath, module] of modules) {
     const namecheckResult = namecheckModule(module, allExports);
     if (namecheckResult.error) {
@@ -141,7 +171,7 @@ export let validateModuleExports = (modules, allExports) => {
       });
     }
   }
-  
+
   return errors.length > 0 ? Result.error(errors) : Result.ok(true);
 };
 
@@ -151,7 +181,7 @@ export let processModules = (modules, entryDir) => {
   const allExports = extractExportsFromModules(modules);
   const moduleInterfaces = new Map();
   const results = new Map();
-  
+
   // Build dependency graph
   const sortResult = buildDependencyGraph(modules);
   if (sortResult.error) {
@@ -161,31 +191,31 @@ export let processModules = (modules, entryDir) => {
       entryDir
     });
   }
-  
+
   const sortedPaths = sortResult.value;
-  
+
   // Process modules in dependency order
   for (const filePath of sortedPaths) {
     const module = modules.get(filePath);
-    
+
     const moduleProvider = (path) => modules.has(path);
     const dependencies = {
       moduleProvider,
       allExports,
       moduleInterfaces
     };
-    
+
     const processResult = processModule(module.source, filePath, entryDir, dependencies);
-    
+
     if (processResult.error) {
       return Result.error(processResult.value);
     }
-    
+
     const { typedModule } = processResult.value;
     moduleInterfaces.set(filePath, createModuleInterface(typedModule));
     results.set(filePath, processResult.value);
   }
-  
+
   return Result.ok({
     results,
     moduleInterfaces,

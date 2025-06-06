@@ -1,18 +1,20 @@
 #!/usr/bin/env node
+import fs from "fs";
 import {
   createConnection,
   TextDocuments,
   ProposedFeatures,
 } from "vscode-languageserver/node.js";
 import { TextDocument } from "vscode-languageserver-textdocument";
-// import * as Build from "./src/build.js";
-// import * as Namecheck from "./src/namecheck.js";
+import * as Build from "./src/lang-server/build.mjs";
+import * as Repo from "./src/lang-server/repo.mjs";
 
 // Create connection and document manager
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 
-const modulesCache = new Map();
+// Initialize an empty repository
+let repo = Repo.init(new Map())
 
 // Initialize server capabilities
 connection.onInitialize((params) => {
@@ -203,6 +205,27 @@ connection.onInitialize((params) => {
   connection.console.log(`Process ID: ${params.processId}`);
   connection.console.log(`Root URI: ${params.rootUri}`);
   connection.console.log(`PARAMS: ${JSON.stringify(params, null, 2)}`);
+
+  const workspaceFolders = params.workspaceFolders || [];
+  const workspaceModulesMap = new Map();
+  
+  for (const folder of workspaceFolders) {
+    // Convert file:// URI to local path
+    const workspaceDir = folder.uri.replace('file://', '');
+    connection.console.log(`Building modules for workspace: ${workspaceDir}`);
+    
+    try {
+      const modules = Build.buildModulesFromDir(workspaceDir);
+      workspaceModulesMap.set(workspaceDir, modules);
+      connection.console.log(`Found ${modules.size} modules in ${workspaceDir}`);
+    } catch (error) {
+      connection.console.log(`Error building modules for ${workspaceDir}: ${error.message}`);
+    }
+  }
+  
+  repo = Repo.init(workspaceModulesMap);
+  connection.console.log(`Initialized repo with ${workspaceModulesMap.size} workspaces`);
+
   return {
     capabilities: {
       textDocumentSync: {
@@ -255,7 +278,23 @@ documents.onDidChangeContent(async (change) => {
   const text = document.getText();
 
   connection.console.log("=> onDidChangeContent");
-  connection.console.log(JSON.stringify(change, null, 2));
+  connection.console.log(`Document URI: ${document.uri}`);
+  
+  // Convert file:// URI to local path
+  const filePath = document.uri.replace('file://', '');
+  const foundModule = Repo.findModule(repo, filePath);
+  
+  if (foundModule) {
+    connection.console.log(`Found module: ${foundModule.absoluteFilePath}`);
+    // TODO: Update module with new content using Repo.updateModule
+    const updatedModule = Repo.updateModule(repo, filePath, text);
+    if (updatedModule) {
+      connection.console.log(`Updated module successfully`);
+    }
+  } else {
+    connection.console.log(`Module not found for: ${filePath}`);
+  }
+  
   connection.console.log("END onDidChangeContent");
 
   // try {
