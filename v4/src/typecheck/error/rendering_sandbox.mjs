@@ -1,4 +1,4 @@
-import { renderError } from "./rendering.mjs";
+import renderError from "./rendering.mjs";
 import * as ErrorData from "./data.mjs";
 import * as T from "../types/data.mjs";
 

@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test",
+    "start": "node index.mjs example",
     "sandbox": "sandbox",
     "sandbox:watch": "sandbox --watch"
   },

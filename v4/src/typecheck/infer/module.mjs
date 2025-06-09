@@ -5,9 +5,7 @@ import { applySubst, unify } from "../types/unfify.mjs";
 import { generalize, instantiate } from "../types/generalize.mjs";
 import Env from "../env.mjs";
 import inferExpr from "./expression.mjs";
-import {
-  unsupported,
-} from "../errors/data.mjs";
+import { unsupported } from "../error/data.mjs";
 
 /* MODULES ---------------------------------------- */
 
@@ -30,7 +28,13 @@ export default function inferModule(
       let result = inferExportDefaultDeclaration(node, env, subst, exports);
       if (result.error) return result;
     } else if (node.type === "ImportDeclaration") {
-      let result = inferImportDeclaration(node, env, subst, mod, moduleInterfaces);
+      let result = inferImportDeclaration(
+        node,
+        env,
+        subst,
+        mod,
+        moduleInterfaces,
+      );
       if (result.error) return result;
     } else {
       return error(unsupported(node, { stage: "inferModule" }));
@@ -43,24 +47,35 @@ export default function inferModule(
 /* VARIABLES ---------------------------------------- */
 
 function inferVariableDeclaration(node, env, subst) {
-  for (const decl of node.declarations) {
-    const name = decl.id.name;
-    const expr = decl.init;
-    const selfTypeVar = T.freshTypeVar();
-    env.set(name, selfTypeVar);
-    const type = inferExpr(expr, env, subst);
-    if (type.error) return type;
-    const unifyResult = unify(selfTypeVar, type.value, subst);
-    if (unifyResult.error)
-      return error(
-        unsupported(decl, {
-          stage: "inferModule.VariableDeclaration.recursion",
-        }),
-      );
-    const finalType = applySubst(subst, selfTypeVar);
-    const generalizedType = generalize(env, finalType);
-    env.set(name, generalizedType);
+  if (node.declarations.length > 1) {
+    return error(
+      unsupported(node, {
+        stage: "inferModule.VariableDeclaration",
+        message: "Only single declarations are supported",
+      }),
+    );
   }
+
+  const isRec = true; // node.rec === true;
+  const decl = node.declarations[0];
+  const name = decl.id.name;
+  const expr = decl.init;
+
+  const selfTypeVar = T.freshTypeVar();
+  env.set(name, selfTypeVar);
+
+  const type = inferExpr(expr, env, subst);
+  if (type.error) return type;
+
+  const unifyResult = unify(selfTypeVar, type.value, subst);
+  if (unifyResult.error) {
+    throw new Error("This should never happen");
+  }
+
+  const finalType = applySubst(subst, selfTypeVar);
+  const generalizedType = generalize(env, finalType);
+  env.set(name, generalizedType);
+
   return ok(undefined);
 }
 

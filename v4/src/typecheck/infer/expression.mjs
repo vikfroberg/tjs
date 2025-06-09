@@ -9,7 +9,7 @@ import {
   unaryExpressionUnsupportedType,
   arityMismatch,
   paramMismatch,
-} from "../errors/data.mjs";
+} from "../error/data.mjs";
 
 /* EXPRESSIONS ---------------------------------------- */
 
@@ -219,7 +219,8 @@ function inferArrowFunctionExpression(node, env, subst) {
     if (param.type !== "Identifier") {
       return error(
         unsupported(param, {
-          stage: "inferExpr.ArrowFunctionExpression.params",
+          stage: "inferExpr.ArrowFunctionExpression",
+          message: "Only Identifiers are supported in parameter lists",
         }),
       );
     }
@@ -328,5 +329,6 @@ function inferLiteral(node) {
   if (typeof node.value === "number") return ok(T.number);
   if (typeof node.value === "string") return ok(T.string);
   if (typeof node.value === "boolean") return ok(T.bool);
+  if (node.value === null) return ok(T.null_);
   return error(unsupported(node, { stage: "inferLiteral" }));
 }

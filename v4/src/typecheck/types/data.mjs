@@ -1,6 +1,7 @@
 export let string = { type: "string" };
 export let number = { type: "number" };
 export let bool = { type: "boolean" };
+export let null_ = { type: "null" };
 export let funN = (paramTypes, returnType) => ({
   type: "function",
   paramTypes,
@@ -12,6 +13,11 @@ export let typeVar = (id) => ({ type: "var", id });
 export let scheme = (vars, type) => ({ type: "scheme", vars, body: type });
 
 let typeVarCounter = 0;
+
+export let resetTypeVarCounter = () => {
+  typeVarCounter = 0;
+};
+
 export let freshTypeVar = () => {
   return { type: "var", id: ++typeVarCounter };
 };

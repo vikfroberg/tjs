@@ -5,7 +5,7 @@ let pluralize = (word, count) => (count === 1 ? word : word + "s");
 import * as E from "../../error.mjs";
 import { stringify } from "../types/data.mjs";
 
-export let renderError = (error, module) => {
+export default function renderError(error, module) {
   switch (error.type) {
     case "unsupported": {
       return E.stack({ spacing: 2 }, [
@@ -122,4 +122,4 @@ export let renderError = (error, module) => {
       ]);
     }
   }
-};
+}
