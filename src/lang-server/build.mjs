@@ -222,3 +222,37 @@ export let processModules = (modules, entryDir) => {
     allExports
   });
 };
+
+// Virtual file system functions for testing
+
+export let findJsFilesVirtual = (virtualFiles) => {
+  return Array.from(virtualFiles.keys()).filter(path => 
+    path.endsWith('.js') || path.endsWith('.mjs')
+  );
+};
+
+export let buildModulesFromDirVirtual = (virtualFiles, entryDir) => {
+  const moduleProvider = (path) => virtualFiles.has(path);
+  const importResolver = createImportResolver(moduleProvider);
+  
+  const jsFiles = findJsFilesVirtual(virtualFiles);
+  const modules = jsFiles.map(file => {
+    const source = virtualFiles.get(file);
+    const module = createModuleFromSource(source, file, entryDir, importResolver);
+    return [file, module];
+  });
+  
+  return new Map(modules);
+};
+
+// Dependency injection objects
+
+export const realBuildFunctions = {
+  findJsFiles,
+  buildModulesFromDir
+};
+
+export const createVirtualBuildFunctions = (virtualFiles) => ({
+  findJsFiles: () => findJsFilesVirtual(virtualFiles),
+  buildModulesFromDir: (dir) => buildModulesFromDirVirtual(virtualFiles, dir)
+});
