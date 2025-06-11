@@ -19,8 +19,8 @@
     "vscode-languageserver-textdocument": "^1.0.12"
   },
   "devDependencies": {
-    "cli-sandbox": "^1.0.0",
     "@types/node": "^22.15.20",
+    "cli-sandbox": "^1.0.0",
     "typescript": "^5.8.3"
   }
 }
