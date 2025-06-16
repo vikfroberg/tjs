@@ -32,13 +32,13 @@ export let findJsFiles = (dir) => {
 export let buildModulesFromDir = (dir) => {
   const moduleProvider = (path) => fs.existsSync(path);
   const importResolver = createImportResolver(moduleProvider);
-  
+
   const modules = findJsFiles(dir).map(file => {
     const source = fs.readFileSync(file, "utf8");
     const module = createModuleFromSource(source, file, dir, importResolver);
     return [file, module];
   });
-  
+
   return new Map(modules);
 };
 
@@ -123,24 +123,24 @@ export let processModule = (source, filePath, entryDir, dependencies) => {
   if (namecheckResult.error) {
     return Result.error({
       type: 'namecheck',
-      error: namecheckResult.error,
+      error: namecheckResult.value,
       module
     });
   }
 
   // Typecheck
-  const typecheckResult = typecheckModule(module, moduleInterfaces);
-  if (typecheckResult.error) {
-    return Result.error({
-      type: 'typecheck',
-      error: typecheckResult.error,
-      module
-    });
-  }
+  // const typecheckResult = typecheckModule(module, moduleInterfaces);
+  // if (typecheckResult.error) {
+  //   return Result.error({
+  //     type: 'typecheck',
+  //     error: typecheckResult.value,
+  //     module
+  //   });
+  // }
 
   return Result.ok({
     module,
-    typedModule: typecheckResult.ok
+    // typedModule: typecheckResult.ok
   });
 };
 
@@ -211,8 +211,8 @@ export let processModules = (modules, entryDir) => {
       return Result.error(processResult.value);
     }
 
-    const { typedModule } = processResult.value;
-    moduleInterfaces.set(filePath, createModuleInterface(typedModule));
+    // const { typedModule } = processResult.value;
+    // moduleInterfaces.set(filePath, createModuleInterface(typedModule));
     results.set(filePath, processResult.value);
   }
 
@@ -226,7 +226,7 @@ export let processModules = (modules, entryDir) => {
 // Virtual file system functions for testing
 
 export let findJsFilesVirtual = (virtualFiles) => {
-  return Array.from(virtualFiles.keys()).filter(path => 
+  return Array.from(virtualFiles.keys()).filter(path =>
     path.endsWith('.js') || path.endsWith('.mjs')
   );
 };
@@ -234,14 +234,14 @@ export let findJsFilesVirtual = (virtualFiles) => {
 export let buildModulesFromDirVirtual = (virtualFiles, entryDir) => {
   const moduleProvider = (path) => virtualFiles.has(path);
   const importResolver = createImportResolver(moduleProvider);
-  
+
   const jsFiles = findJsFilesVirtual(virtualFiles);
   const modules = jsFiles.map(file => {
     const source = virtualFiles.get(file);
     const module = createModuleFromSource(source, file, entryDir, importResolver);
     return [file, module];
   });
-  
+
   return new Map(modules);
 };
 

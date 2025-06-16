@@ -15,7 +15,7 @@ impl zed::Extension for TjsTypecheckerExtension {
     ) -> Result<zed::Command> {
         match language_server_id.as_ref() {
             "tjs" => Ok(zed::Command {
-                command: "/Users/manne/dev/tjs/v4/lang-server".to_string(),
+                command: "/Users/manne/dev/tjs/lang-server".to_string(),
                 args: vec!["--stdio".to_string()],
                 env: Default::default(),
             }),

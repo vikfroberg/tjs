@@ -4,17 +4,39 @@ import {
   ProposedFeatures,
 } from "vscode-languageserver/node.js";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { realBuildFunctions } from "./build.mjs";
+import * as Build from "./build.mjs";
 import * as Repo from "./repo.mjs";
+import * as Result from "../result.mjs";
 
 export function createLanguageServer(options = {}) {
   const {
-    buildFunctions = realBuildFunctions,
+    buildFunctions = Build.realBuildFunctions,
     connection = createConnection(ProposedFeatures.all),
     documents = new TextDocuments(TextDocument)
   } = options;
 
-  let repo = Repo.init(new Map());
+  // let repo = Repo.init(new Map());
+  let workspaceFolders = new Set();
+
+  let recompileAndSendDiagnostics = (workspaceFolder) => {
+    let dir = workspaceFolder.replace("file://", "");
+    connection.console.log(`Compiling ${dir}`);
+    let modules = buildFunctions.buildModulesFromDir(dir);
+    Result.cata(
+      Build.processModules(modules, dir),
+      (ok) => {},
+      (error) => {
+        connection.console.log("COMPILE ERROR:")
+        connection.console.log(JSON.stringify(error, null, 2))
+        // connection.sendDiagnostics({
+        //   uri: error.,
+        //   diagnostics: [{
+
+        //   }]
+        // });
+      }
+    );
+  };
 
   // Initialize server capabilities
   connection.onInitialize((params) => {
@@ -24,26 +46,7 @@ export function createLanguageServer(options = {}) {
     connection.console.log(`Root URI: ${params.rootUri}`);
     connection.console.log(`PARAMS: ${JSON.stringify(params, null, 2)}`);
 
-    const workspaceFolders = params.workspaceFolders || [];
-    const workspaceModulesMap = new Map();
-    
-    for (const folder of workspaceFolders) {
-      // Convert file:// URI to local path
-      const workspaceDir = folder.uri.replace('file://', '');
-      connection.console.log(`Building modules for workspace: ${workspaceDir}`);
-      
-      try {
-        // Use injected build function instead of direct Build.buildModulesFromDir
-        const modules = buildFunctions.buildModulesFromDir(workspaceDir);
-        workspaceModulesMap.set(workspaceDir, modules);
-        connection.console.log(`Found ${modules.size} modules in ${workspaceDir}`);
-      } catch (error) {
-        connection.console.log(`Error building modules for ${workspaceDir}: ${error.message}`);
-      }
-    }
-    
-    repo = Repo.init(workspaceModulesMap);
-    connection.console.log(`Initialized repo with ${workspaceModulesMap.size} workspaces`);
+    workspaceFolders = new Set(params.workspaceFolders.map(folder => folder.uri) || []);
 
     return {
       capabilities: {
@@ -51,19 +54,30 @@ export function createLanguageServer(options = {}) {
           openClose: true,
           change: 2, // Incremental sync
         },
-        // hoverProvider: true,
+        hoverProvider: true,
         // definitionProvider: true,
-        // diagnosticsProvider: true
+        diagnosticsProvider: true
       },
     };
   });
 
   connection.onInitialized(() => {
     connection.console.log("Server initialized and ready!");
+    for (const folder of workspaceFolders) {
+      connection.console.log(`Workspace folder: ${folder}`);
+      recompileAndSendDiagnostics(folder);
+    }
   });
 
   documents.onDidOpen((event) => {
+    // @todo: Only recompile relevant workspace folder for the opened document
+    for (const folder of workspaceFolders) {
+      recompileAndSendDiagnostics(folder);
+    }
+
+
     connection.console.log(`Document opened: ${event.document.uri}`);
+    connection.console.log(JSON.stringify(event, null, 2))
   });
 
   documents.onDidClose((event) => {
@@ -81,23 +95,6 @@ export function createLanguageServer(options = {}) {
 
     connection.console.log("=> onDidChangeContent");
     connection.console.log(`Document URI: ${document.uri}`);
-    
-    // Convert file:// URI to local path
-    const filePath = document.uri.replace('file://', '');
-    const foundModule = Repo.findModule(repo, filePath);
-    
-    if (foundModule) {
-      connection.console.log(`Found module: ${foundModule.absoluteFilePath}`);
-      // TODO: Update module with new content using Repo.updateModule
-      const updatedModule = Repo.updateModule(repo, filePath, text);
-      if (updatedModule) {
-        connection.console.log(`Updated module successfully`);
-      }
-    } else {
-      connection.console.log(`Module not found for: ${filePath}`);
-    }
-    
-    connection.console.log("END onDidChangeContent");
 
     // try {
     //     // Use your typechecker here
@@ -121,33 +118,34 @@ export function createLanguageServer(options = {}) {
   });
 
   // Provide hover information
-  // connection.onHover(async (params) => {
-  //   const document = documents.get(params.textDocument.uri);
-  //   if (!document) return null;
+  connection.onHover(async (params) => {
+    connection.console.log("START onHover");
+    const document = documents.get(params.textDocument.uri);
+    if (!document) return null;
 
-  //   const position = params.position;
-  //   const text = document.getText();
+    const position = params.position;
+    const text = document.getText();
 
-  //   const hoverInfo = {
-  //     type: `Hello World!`,
-  //     documentation: "Greetings from TJS language server :)",
-  //   };
+    const hoverInfo = {
+      type: `Hello World!`,
+      documentation: "Greetings from TJS language server :)",
+    };
 
-  //   if (hoverInfo) {
-  //     return {
-  //       contents: {
-  //         kind: "markdown",
-  //         value: `**${hoverInfo.type}**\n\n${hoverInfo.documentation || ""}`,
-  //       },
-  //     };
-  //   }
+    if (hoverInfo) {
+      return {
+        contents: {
+          kind: "markdown",
+          value: `**${hoverInfo.type}**\n\n${hoverInfo.documentation || ""}`,
+        },
+      };
+    }
 
-  //   return null;
-  // });
+    return null;
+  });
 
   // Connect documents to the connection
   documents.listen(connection);
-  
+
   return {
     connection,
     documents,
