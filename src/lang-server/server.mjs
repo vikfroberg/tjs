@@ -5,7 +5,6 @@ import {
 } from "vscode-languageserver/node.js";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import * as Build from "./build.mjs";
-import * as Repo from "./repo.mjs";
 import * as Result from "../result.mjs";
 
 export function createLanguageServer(options = {}) {
@@ -15,76 +14,106 @@ export function createLanguageServer(options = {}) {
     documents = new TextDocuments(TextDocument)
   } = options;
 
-  // let repo = Repo.init(new Map());
   let workspaceFolders = new Set();
 
   let recompileAndSendDiagnostics = (workspaceFolder) => {
     let dir = workspaceFolder.replace("file://", "");
     connection.console.log(`Compiling ${dir}`);
-    let modules = buildFunctions.buildModulesFromDir(dir);
-    
-    // Clear diagnostics for all files first
-    for (const [filePath] of modules) {
-      connection.sendDiagnostics({
-        uri: `file://${filePath}`,
-        diagnostics: []
-      });
-    }
-    
-    Result.cata(
-      Build.processModules(modules, dir),
-      (ok) => {
-        // Success - diagnostics already cleared above
-      },
-      (error) => {
-        if (error.type === 'namecheck') {
-          const { error: namecheckError, module } = error;
+    try {
+      let modules = buildFunctions.buildModulesFromDir(dir);
+      
+      // Clear diagnostics for all files first
+      for (const [filePath] of modules) {
+        connection.sendDiagnostics({
+          uri: `file://${filePath}`,
+          diagnostics: []
+        });
+      }
+      
+      Result.cata(
+        Build.processModules(modules, dir),
+        (ok) => {
+          // Success - diagnostics already cleared above
+        },
+        (error) => {
+          if (error.type === 'namecheck') {
+            const { error: namecheckError, module } = error;
+            const diagnostics = [{
+              severity: 1, // Error
+              range: {
+                start: {
+                  line: namecheckError.node.loc.start.line - 1,
+                  character: namecheckError.node.loc.start.column
+                },
+                end: {
+                  line: namecheckError.node.loc.end.line - 1,
+                  character: namecheckError.node.loc.end.column
+                }
+              },
+              message: formatErrorAsPlainText(namecheckError, module),
+              source: 'tjs'
+            }];
+
+            connection.sendDiagnostics({
+              uri: `file://${module.absoluteFilePath}`,
+              diagnostics
+            });
+          } else {
+            // Handle unrecognized error types - show as generic diagnostic
+            connection.console.log(`Unhandled error type: ${error.type}`);
+            // For now, just log - we could send a generic diagnostic to the first file if needed
+          }
+        }
+      );
+    } catch (startupError) {
+      connection.console.log(`Error during workspace compilation: ${startupError.message}`);
+      
+      // Try to extract file path and position from syntax error and send diagnostic
+      const syntaxErrorMatch = startupError.message.match(/(\[(\d+):(\d+)-(\d+):(\d+)\]): (.+)/);
+      if (syntaxErrorMatch && startupError.stack) {
+        // Extract error position
+        const [, , startLine, startCol, endLine, endCol, errorMsg] = syntaxErrorMatch;
+        
+        // Try to find which file caused the error from the stack trace
+        const fileMatch = startupError.stack.match(/file:\/\/([^:]+\.m?js)/);
+        if (fileMatch) {
+          const filePath = fileMatch[1];
           const diagnostics = [{
             severity: 1, // Error
             range: {
-              start: {
-                line: namecheckError.node.loc.start.line - 1,
-                character: namecheckError.node.loc.start.column
-              },
-              end: {
-                line: namecheckError.node.loc.end.line - 1,
-                character: namecheckError.node.loc.end.column
-              }
+              start: { line: parseInt(startLine) - 1, character: parseInt(startCol) },
+              end: { line: parseInt(endLine) - 1, character: parseInt(endCol) }
             },
-            message: formatErrorAsPlainText(namecheckError, module),
-            source: 'tjs'
+            message: `Syntax Error: ${errorMsg}`,
+            source: 'tjs-parser'
           }];
 
           connection.sendDiagnostics({
-            uri: `file://${module.absoluteFilePath}`,
+            uri: `file://${filePath}`,
             diagnostics
           });
-        } else {
-          // Handle unrecognized error types - show as generic diagnostic
-          connection.console.log(`Unhandled error type: ${error.type}`);
-          // For now, just log - we could send a generic diagnostic to the first file if needed
         }
       }
-    );
+    }
   };
 
   // Helper function to format namecheck errors as plain text
   let formatErrorAsPlainText = (error, module) => {
     switch (error.type) {
       case "UndefinedVariableError":
-        let suggestions = error.suggestions.length > 0
-          ? `\n\nDid you mean: ${error.suggestions.slice(0, 3).join(', ')}`
+        let suggestions = error.context.suggestions.length > 0
+          ? `\n\nDid you mean: ${error.context.suggestions.slice(0, 3).join(', ')}`
           : '';
-        return `Undefined variable: '${error.name}'\n\nTried to reference a variable that doesn't exist.${suggestions}`;
+        return `Undefined variable: '${error.context.name}'\n\nTried to reference a variable that doesn't exist.${suggestions}`;
 
       case "DuplicateDeclarationError":
-        return `Duplicate declaration: '${error.name}'\n\nVariable was already declared at line ${error.node2.loc.start.line}.`;
+        return `Duplicate declaration: '${error.context.name}'\n\nVariable was already declared at line ${error.context.node2.loc.start.line}.`;
 
       case "NameNotExportedError":
-        let exports = error.availableExports.length > 0
-          ? `\n\nAvailable exports: ${error.availableExports.join(', ')}`
+        let exports = error.context.availableExports.length > 0
+          ? `\n\nAvailable exports: ${error.context.availableExports.join(', ')}`
           : '';
-        return `Import error: Variable not exported from module\n\nModule: ${error.importNode.resolvedModulePath}${exports}`;
+        return `Import error: Variable not exported from module\n\nModule: ${error.context.importNode.resolvedModulePath}${exports}`;
 
       case "UnsupportedError":
         return `Unsupported feature\n\nThis language feature is not currently supported by TJS.`;
@@ -268,7 +297,6 @@ export function createLanguageServer(options = {}) {
   return {
     connection,
     documents,
-    repo: () => repo, // Getter for testing
     listen: () => connection.listen()
   };
 }

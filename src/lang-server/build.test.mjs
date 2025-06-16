@@ -151,7 +151,8 @@ suite("Language Server - Build", () => {
 
     if (!result.error) {
       assert(result.value.module);
-      assert(result.value.typedModule);
+      // typedModule is commented out since we disabled typechecking
+      // assert(result.value.typedModule);
     } else {
       // Processing might fail, which is also valid
       assert(result.error);

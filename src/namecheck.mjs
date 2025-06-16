@@ -14,13 +14,16 @@ const undefinedVariableError = (name, node) => {
   let suggestions = Levenstein.search(name, getAllNamesInScope(), 2);
   return {
     type: "UndefinedVariableError",
-    name,
     node,
-    suggestions,
+    context: {
+      name,
+      suggestions,
+    },
   };
 };
 
-let renderUndefinedVariableError = ({ node, suggestions }, module) => {
+let renderUndefinedVariableError = ({ node, context }, module) => {
+  const { suggestions } = context;
   return E.stack({ spacing: 2 }, [
     E.header("UNDEFINED VARIABLE", module.relativeFilePath),
     E.stack({ spacing: 2 }, [
@@ -37,13 +40,16 @@ let renderUndefinedVariableError = ({ node, suggestions }, module) => {
 const duplicateDeclarationsError = (name, node1, node2) => {
   return {
     type: "DuplicateDeclarationError",
-    name,
     node: node1,
-    node2,
+    context: {
+      name,
+      node2,
+    },
   };
 };
 
-const renderDuplicateDeclarationError = ({ name, node, node2 }, module) => {
+const renderDuplicateDeclarationError = ({ node, context }, module) => {
+  const { name, node2 } = context;
   return E.stack({ spacing: 2 }, [
     E.header("DUPLICATE VARIABLE DECLARATION", module.relativeFilePath),
     E.stack({ spacing: 2 }, [
@@ -60,16 +66,20 @@ const renderDuplicateDeclarationError = ({ name, node, node2 }, module) => {
 const nameNotExportedError = (importNode, specifierNode, availableExports) => {
   return {
     type: "NameNotExportedError",
-    importNode,
-    specifierNode,
-    availableExports,
+    node: specifierNode,
+    context: {
+      importNode,
+      availableExports,
+    },
   };
 };
 
 const renderNameNotExportedError = (
-  { importNode, specifierNode, availableExports },
+  { node, context },
   module,
 ) => {
+  const { importNode, availableExports } = context;
+  const specifierNode = node;
   return E.stack({ spacing: 2 }, [
     E.header("VARIABLE NOT EXPORTED", module.relativeFilePath),
     E.reflow(
@@ -92,6 +102,7 @@ const unsupportedError = (node) => {
   return {
     type: "UnsupportedError",
     node,
+    context: {},
   };
 };
 

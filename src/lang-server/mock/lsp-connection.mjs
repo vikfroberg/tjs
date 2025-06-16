@@ -68,14 +68,24 @@ export class MockConnection {
   // Diagnostic handling
   sendDiagnostics({ uri, diagnostics }) {
     this.diagnostics.set(uri, diagnostics);
+    // Also track all published diagnostics for testing
+    if (!this.publishedDiagnostics) {
+      this.publishedDiagnostics = [];
+    }
+    this.publishedDiagnostics.push({ uri, diagnostics });
   }
 
   getDiagnostics(uri) {
     return this.diagnostics.get(uri) || [];
   }
 
+  getPublishedDiagnostics() {
+    return this.publishedDiagnostics || [];
+  }
+
   clearDiagnostics() {
     this.diagnostics.clear();
+    this.publishedDiagnostics = [];
   }
 
   // Test helpers
