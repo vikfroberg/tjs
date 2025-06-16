@@ -289,4 +289,78 @@ const`; // Syntax error on line 2, column 0 - incomplete const declaration
       }
     }
   });
+
+  test('should handle typecheck errors with diagnostics', async () => {
+    const virtualFiles = new Map([
+      ['/workspace/index.mjs', 'export const x = 1 + "hello";'], // Type mismatch error
+      ['/workspace/math.mjs', 'export const sum = (a, b) => a + b;']
+    ]);
+    const { server, mockConnection } = createTestableLanguageServer(virtualFiles);
+
+    await mockConnection.initialize({
+      workspaceFolders: [{ uri: 'file:///workspace', name: 'test' }],
+      clientInfo: { name: 'Test Client' }
+    });
+
+    // Wait for initial compilation and check if typecheck diagnostics were sent
+    const diagnostics = mockConnection.getPublishedDiagnostics();
+    
+    // Get all diagnostics for the index file (there might be multiple publishDiagnostics calls)
+    const allIndexDiagnostics = diagnostics
+      .filter(d => d.uri === 'file:///workspace/index.mjs')
+      .flatMap(d => d.diagnostics);
+    
+    assert.ok(allIndexDiagnostics.length > 0, 'Should have at least one diagnostic for type mismatch');
+    
+    const typecheckDiagnostic = allIndexDiagnostics.find(d => d.source === 'tjs-typecheck');
+    assert.ok(typecheckDiagnostic, 'Should have a typecheck diagnostic for type mismatch');
+    assert.ok(typecheckDiagnostic.message.includes('mismatch') || typecheckDiagnostic.message.includes('error'), 'Should report type error');
+  });
+
+  test('should send type mismatch diagnostic when editing file', async () => {
+    const virtualFiles = new Map([
+      ['/workspace/index.mjs', 'export const x = 42;'], // Start with valid code
+      ['/workspace/math.mjs', 'export const sum = (a, b) => a + b;']
+    ]);
+    const { server, mockConnection, mockDocuments } = createTestableLanguageServer(virtualFiles);
+
+    await mockConnection.initialize({
+      workspaceFolders: [{ uri: 'file:///workspace', name: 'test' }],
+      clientInfo: { name: 'Test Client' }
+    });
+
+    // Open document with valid code
+    await mockDocuments.openDocument(
+      'file:///workspace/index.mjs', 
+      'javascript', 
+      1, 
+      'export const x = 42;'
+    );
+
+    // Clear diagnostics from initialization
+    mockConnection.clearDiagnostics();
+
+    // Introduce a type mismatch
+    await mockDocuments.changeDocument(
+      'file:///workspace/index.mjs',
+      'export const x = 1 + "hello";', // Type mismatch: number + string
+      2
+    );
+
+    // Check that we get a typecheck diagnostic
+    const diagnostics = mockConnection.getPublishedDiagnostics();
+    const indexDiagnostics = diagnostics.filter(d => d.uri === 'file:///workspace/index.mjs');
+    
+    assert.ok(indexDiagnostics.length > 0, 'Should have published diagnostics');
+    
+    // Find a typecheck diagnostic
+    const typecheckDiagnostic = indexDiagnostics
+      .flatMap(d => d.diagnostics)
+      .find(diag => diag.source === 'tjs-typecheck');
+    
+    assert.ok(typecheckDiagnostic, 'Should receive a typecheck diagnostic for type mismatch');
+    assert.ok(typecheckDiagnostic.message.includes('mismatch') || typecheckDiagnostic.message.includes('error'), 'Should contain type error message');
+    assert.strictEqual(typecheckDiagnostic.severity, 1, 'Should be an error severity');
+    assert.ok(typecheckDiagnostic.range.start.line >= 0, 'Should have valid line position');
+  });
 });

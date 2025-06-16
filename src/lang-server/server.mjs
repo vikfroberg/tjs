@@ -51,7 +51,29 @@ export function createLanguageServer(options = {}) {
                 }
               },
               message: formatErrorAsPlainText(namecheckError, module),
-              source: 'tjs'
+              source: 'tjs-namecheck'
+            }];
+
+            connection.sendDiagnostics({
+              uri: `file://${module.absoluteFilePath}`,
+              diagnostics
+            });
+          } else if (error.type === 'typecheck') {
+            const { error: typecheckError, module } = error;
+            const diagnostics = [{
+              severity: 1, // Error
+              range: {
+                start: {
+                  line: typecheckError.node.loc.start.line - 1,
+                  character: typecheckError.node.loc.start.column
+                },
+                end: {
+                  line: typecheckError.node.loc.end.line - 1,
+                  character: typecheckError.node.loc.end.column
+                }
+              },
+              message: formatErrorAsPlainText(typecheckError, module),
+              source: 'tjs-typecheck'
             }];
 
             connection.sendDiagnostics({
@@ -97,9 +119,10 @@ export function createLanguageServer(options = {}) {
     }
   };
 
-  // Helper function to format namecheck errors as plain text
+  // Helper function to format namecheck and typecheck errors as plain text
   let formatErrorAsPlainText = (error, module) => {
     switch (error.type) {
+      // Namecheck errors
       case "UndefinedVariableError":
         let suggestions = error.context.suggestions.length > 0
           ? `\n\nDid you mean: ${error.context.suggestions.slice(0, 3).join(', ')}`
@@ -117,6 +140,28 @@ export function createLanguageServer(options = {}) {
 
       case "UnsupportedError":
         return `Unsupported feature\n\nThis language feature is not currently supported by TJS.`;
+
+      // Typecheck errors
+      case "binaryExpressionMismatch":
+        return `Type mismatch in binary expression\n\nExpected compatible types for '${error.node.operator}' operator.`;
+
+      case "binaryExpressionUnsupportedType":
+        return `Unsupported type in binary expression\n\nOperator '${error.node.operator}' cannot be applied to this type.`;
+
+      case "unaryExpressionUnsupportedType":
+        return `Unsupported type in unary expression\n\nOperator '${error.node.operator}' cannot be applied to this type.`;
+
+      case "arityMismatch":
+        return `Function call arity mismatch\n\nFunction expects different number of arguments.`;
+
+      case "paramMismatch":
+        return `Parameter type mismatch\n\nArgument type doesn't match expected parameter type.`;
+
+      case "unsupported":
+        return `Unsupported feature\n\nThis language feature is not currently supported by the type checker.`;
+
+      case "unexpectedError":
+        return `Unexpected error during type checking\n\nError: ${error.context.originalError}`;
 
       default:
         return `Unknown error type: ${error.type}\n\nUnrecognized error type encountered.\n\n${JSON.stringify(error, null, 2)}`;
@@ -246,7 +291,29 @@ export function createLanguageServer(options = {}) {
                 }
               },
               message: formatErrorAsPlainText(namecheckError, module),
-              source: 'tjs'
+              source: 'tjs-namecheck'
+            }];
+
+            connection.sendDiagnostics({
+              uri: `file://${module.absoluteFilePath}`,
+              diagnostics
+            });
+          } else if (error.type === 'typecheck') {
+            const { error: typecheckError, module } = error;
+            const diagnostics = [{
+              severity: 1, // Error
+              range: {
+                start: {
+                  line: typecheckError.node.loc.start.line - 1,
+                  character: typecheckError.node.loc.start.column
+                },
+                end: {
+                  line: typecheckError.node.loc.end.line - 1,
+                  character: typecheckError.node.loc.end.column
+                }
+              },
+              message: formatErrorAsPlainText(typecheckError, module),
+              source: 'tjs-typecheck'
             }];
 
             connection.sendDiagnostics({
@@ -261,6 +328,7 @@ export function createLanguageServer(options = {}) {
       );
     } catch (processingError) {
       connection.console.log(`Error during module processing: ${processingError.message}`);
+      connection.console.log(`Stack trace: ${processingError.stack}`);
       // Don't crash the server, just log the error
     }
   };

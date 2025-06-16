@@ -2,6 +2,7 @@ import path from "path";
 import * as Parse from "../parse.mjs";
 import * as Namecheck from "../namecheck.mjs";
 import * as Typecheck from "../typecheck/index.mjs";
+import * as T from "../typecheck/types/data.mjs";
 import * as Ast from "../ast.mjs";
 import * as DependencyGraph from "../dependencyGraph.mjs";
 import "../map.mjs";
@@ -62,7 +63,19 @@ export let namecheckModule = (module, allExports) => {
 };
 
 export let typecheckModule = (module, moduleInterfaces) => {
-  return Typecheck.inferModule(module, moduleInterfaces);
+  try {
+    return Typecheck.inferModule(module, moduleInterfaces);
+  } catch (error) {
+    // If typecheck fails with an exception, return it as a Result.error
+    return Result.error({
+      type: "unexpectedError",
+      node: module.ast,
+      context: {
+        stage: "inferModule",
+        originalError: error.message
+      }
+    });
+  }
 };
 
 // Dependency management
@@ -129,18 +142,18 @@ export let processModule = (source, filePath, entryDir, dependencies) => {
   }
 
   // Typecheck
-  // const typecheckResult = typecheckModule(module, moduleInterfaces);
-  // if (typecheckResult.error) {
-  //   return Result.error({
-  //     type: 'typecheck',
-  //     error: typecheckResult.value,
-  //     module
-  //   });
-  // }
+  const typecheckResult = typecheckModule(module, moduleInterfaces);
+  if (typecheckResult.error) {
+    return Result.error({
+      type: 'typecheck',
+      error: typecheckResult.value,
+      module
+    });
+  }
 
   return Result.ok({
     module,
-    // typedModule: typecheckResult.ok
+    typedModule: typecheckResult.value
   });
 };
 
