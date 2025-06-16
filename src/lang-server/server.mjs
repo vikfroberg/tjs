@@ -6,6 +6,7 @@ import {
 import { TextDocument } from "vscode-languageserver-textdocument";
 import * as Build from "./build.mjs";
 import * as Result from "../result.mjs";
+import * as T from "../typecheck/types/data.mjs";
 
 export function createLanguageServer(options = {}) {
   const {
@@ -15,11 +16,15 @@ export function createLanguageServer(options = {}) {
   } = options;
 
   let workspaceFolders = new Set();
+  let typedModules = new Map(); // Store typed module results for hover
 
   let recompileAndSendDiagnostics = (workspaceFolder) => {
     let dir = workspaceFolder.replace("file://", "");
     connection.console.log(`Compiling ${dir}`);
     try {
+      // Clear typed modules cache before recompilation
+      typedModules.clear();
+      
       let modules = buildFunctions.buildModulesFromDir(dir);
       
       // Clear diagnostics for all files first
@@ -33,9 +38,22 @@ export function createLanguageServer(options = {}) {
       Result.cata(
         Build.processModules(modules, dir),
         (ok) => {
-          // Success - diagnostics already cleared above
+          // Success - store typed modules for hover and clear diagnostics
+          for (const [filePath, result] of ok.results) {
+            if (result.typedModule) {
+              // connection.console.log(`=== Storing typed module for: ${filePath}`);
+              typedModules.set(filePath, {
+                module: result.module,
+                typedModule: result.typedModule,
+                moduleInterfaces: ok.moduleInterfaces
+              });
+            }
+          }
+          // connection.console.log(`=== Stored ${typedModules.size} typed modules`);
+          // connection.console.log(`=== Stored keys: ${Array.from(typedModules.keys()).join(', ')}`);
         },
         (error) => {
+          // connection.console.log(`=== Build error: ${error.type}`);
           if (error.type === 'namecheck') {
             const { error: namecheckError, module } = error;
             const diagnostics = [{
@@ -117,6 +135,73 @@ export function createLanguageServer(options = {}) {
         }
       }
     }
+  };
+
+  // Helper function to format type signatures for display
+  let formatTypeSignature = (type) => {
+    if (!type) return 'unknown';
+    
+    switch (type.type) {
+      case 'string':
+        return 'string';
+      case 'number':
+        return 'number';
+      case 'boolean':
+        return 'boolean';
+      case 'null':
+        return 'null';
+      case 'function':
+        const params = type.paramTypes.map(formatTypeSignature).join(', ');
+        const returnType = formatTypeSignature(type.returnType);
+        return `(${params}) => ${returnType}`;
+      case 'var':
+        return `'${String.fromCharCode(97 + (type.id % 26))}`;
+      case 'scheme':
+        const vars = type.vars.map(v => `'${String.fromCharCode(97 + (v.id % 26))}`).join(', ');
+        return `forall ${vars}. ${formatTypeSignature(type.body)}`;
+      case 'module':
+        return 'module';
+      default:
+        return T.stringify(type) || 'unknown';
+    }
+  };
+
+  // Helper function to find AST node at a specific position
+  let findNodeAtPosition = (ast, line, character) => {
+    let targetNode = null;
+    
+    function traverse(node) {
+      if (!node || !node.loc) return;
+      
+      const { start, end } = node.loc;
+      
+      // Check if position is within this node
+      if (line >= start.line - 1 && line <= end.line - 1) {
+        if (line === start.line - 1 && character < start.column) return;
+        if (line === end.line - 1 && character >= end.column) return;
+        
+        // This node contains the position, check if it's more specific than current target
+        if (!targetNode || 
+            (start.line > targetNode.loc.start.line || 
+             (start.line === targetNode.loc.start.line && start.column > targetNode.loc.start.column))) {
+          targetNode = node;
+        }
+      }
+      
+      // Traverse child nodes
+      for (const key in node) {
+        if (key === 'loc' || key === 'type') continue;
+        const child = node[key];
+        if (Array.isArray(child)) {
+          child.forEach(traverse);
+        } else if (child && typeof child === 'object') {
+          traverse(child);
+        }
+      }
+    }
+    
+    traverse(ast);
+    return targetNode;
   };
 
   // Helper function to format namecheck and typecheck errors as plain text
@@ -234,6 +319,9 @@ export function createLanguageServer(options = {}) {
     let dir = workspaceFolder.replace("file://", "");
     connection.console.log(`Compiling ${dir} with in-memory content`);
     
+    // Clear typed modules cache before recompilation
+    typedModules.clear();
+    
     // Get modules from disk first
     let modules = buildFunctions.buildModulesFromDir(dir);
     
@@ -273,9 +361,22 @@ export function createLanguageServer(options = {}) {
       Result.cata(
         Build.processModules(modules, dir),
         (ok) => {
-          // Success - diagnostics already cleared above
+          // Success - store typed modules for hover and clear diagnostics
+          for (const [filePath, result] of ok.results) {
+            if (result.typedModule) {
+              // connection.console.log(`=== Storing typed module (in-memory) for: ${filePath}`);
+              typedModules.set(filePath, {
+                module: result.module,
+                typedModule: result.typedModule,
+                moduleInterfaces: ok.moduleInterfaces
+              });
+            }
+          }
+          // connection.console.log(`=== Stored ${typedModules.size} typed modules (in-memory)`);
+          // connection.console.log(`=== Stored keys (in-memory): ${Array.from(typedModules.keys()).join(', ')}`);
         },
         (error) => {
+          // connection.console.log(`=== Build error: ${error.type}`);
           if (error.type === 'namecheck') {
             const { error: namecheckError, module } = error;
             const diagnostics = [{
@@ -337,26 +438,77 @@ export function createLanguageServer(options = {}) {
   connection.onHover(async (params) => {
     connection.console.log("START onHover");
     const document = documents.get(params.textDocument.uri);
-    if (!document) return null;
+    if (!document) {
+      return null;
+    }
 
     const position = params.position;
-    const text = document.getText();
+    const filePath = params.textDocument.uri.replace("file://", "");
+    
+    // Get typed module for this file
+    // connection.console.log(`=== Hover request for: ${filePath}`);
+    let typedModuleInfo = typedModules.get(filePath);
+    if (!typedModuleInfo) {
+      // Try to find which workspace folder this file belongs to and trigger compilation
+      for (const workspaceFolder of workspaceFolders) {
+        const workspaceDir = workspaceFolder.replace("file://", "");
+        if (filePath.startsWith(workspaceDir)) {
+          recompileAndSendDiagnostics(workspaceFolder);
+          
+          // Try to get the typed module again after compilation
+          typedModuleInfo = typedModules.get(filePath);
+          if (typedModuleInfo) {
+            break;
+          }
+        }
+      }
+      
+      if (!typedModuleInfo) {
+        return null;
+      }
+    }
 
-    const hoverInfo = {
-      type: `Hello World!`,
-      documentation: "Greetings from TJS language server :)",
-    };
+    const { module, typedModule, moduleInterfaces } = typedModuleInfo;
+    
+    // Find the AST node at the hover position
+    const node = findNodeAtPosition(module.ast, position.line, position.character);
+    if (!node) {
+      connection.console.log(`No AST node found at position ${position.line}:${position.character}`);
+      return null;
+    }
 
-    if (hoverInfo) {
+    connection.console.log(`Found node type: ${node.type} at position`);
+
+    // Check if this node has a stored inferred type from the complete Hindley-Milner inference
+    if (node._inferredType) {
+      const typeSignature = formatTypeSignature(node._inferredType);
+      
       return {
         contents: {
           kind: "markdown",
-          value: `**${hoverInfo.type}**\n\n${hoverInfo.documentation || ""}`,
+          value: `**Type**: \`${typeSignature}\`\n\n*${node.type}*`,
         },
       };
+    } else {
+      // If we found a VariableDeclarator but the identifier has a type, use that instead
+      if (node.type === 'VariableDeclarator' && node.id && node.id._inferredType) {
+        const typeSignature = formatTypeSignature(node.id._inferredType);
+        return {
+          contents: {
+            kind: "markdown",
+            value: `**Type**: \`${typeSignature}\`\n\n*${node.id.type}*`,
+          },
+        };
+      }
     }
 
-    return null;
+    // Fallback: show node type without type signature
+    return {
+      contents: {
+        kind: "markdown",
+        value: `**AST Node**: \`${node.type}\`\n\n*No type information available*`,
+      },
+    };
   });
 
   // Connect documents to the connection

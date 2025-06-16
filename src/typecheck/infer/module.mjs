@@ -76,6 +76,11 @@ function inferVariableDeclaration(node, env, subst) {
   const generalizedType = generalize(env, finalType);
   env.set(name, generalizedType);
 
+  // Store the inferred type on the identifier node
+  if (decl.id) {
+    decl.id._inferredType = generalizedType;
+  }
+
   return ok(undefined);
 }
 
@@ -102,6 +107,11 @@ function inferExportNamedDeclaration(node, env, subst, exports) {
         const generalizedType = generalize(env, finalType);
         env.set(name, generalizedType);
         exports[name] = generalizedType;
+        
+        // Store the inferred type on the identifier node
+        if (decl.id) {
+          decl.id._inferredType = generalizedType;
+        }
       }
     } else {
       return error(

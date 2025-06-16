@@ -13,35 +13,60 @@ import {
 
 /* EXPRESSIONS ---------------------------------------- */
 
+// Helper to store inferred type on AST node
+function storeTypeOnNode(node, type) {
+  if (node && type) {
+    node._inferredType = type;
+  }
+  return type;
+}
+
 export default function inferExpr(node, env, subst = {}) {
+  let result;
+  
   switch (node.type) {
     case "Identifier":
-      return inferIdentifier(node, env, subst);
+      result = inferIdentifier(node, env, subst);
+      break;
 
     case "UnaryExpression":
-      return inferUnaryExpression(node, env, subst);
+      result = inferUnaryExpression(node, env, subst);
+      break;
 
     case "BinaryExpression":
-      return inferBinaryExpression(node, env, subst);
+      result = inferBinaryExpression(node, env, subst);
+      break;
 
     case "LogicalExpression":
-      return inferLogicalExpression(node, env, subst);
+      result = inferLogicalExpression(node, env, subst);
+      break;
 
     case "ArrowFunctionExpression":
-      return inferArrowFunctionExpression(node, env, subst);
+      result = inferArrowFunctionExpression(node, env, subst);
+      break;
 
     case "CallExpression":
-      return inferCallExpression(node, env, subst);
+      result = inferCallExpression(node, env, subst);
+      break;
 
     case "ConditionalExpression":
-      return inferConditionalExpression(node, env, subst);
+      result = inferConditionalExpression(node, env, subst);
+      break;
 
     case "Literal":
-      return inferLiteral(node);
+      result = inferLiteral(node);
+      break;
 
     default:
       return error(unsupported(node, { stage: "inferExpr" }));
   }
+  
+  // Store the inferred type on the AST node if successful
+  if (result && !result.error) {
+    storeTypeOnNode(node, result.value);
+  }
+  
+  return result;
 }
 
 /* IDENTIFIER ---------------------------------------- */
