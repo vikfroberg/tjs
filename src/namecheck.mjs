@@ -1,28 +1,13 @@
 import * as Result from "./result.mjs";
 import * as E from "./error.mjs";
 import * as Levenstein from "./levenstein.mjs";
-/**
- * @todo
- * - Undefined import variables - Checking against index of exported variables per file
- * - Import * as Something syntax, both the as Something it self but also the usages of Something.variable access.
- * - Object destruction in declarations
- * - List destruction in declarations
- */
+
 let error = null;
 let scopes = new Map();
 let exports = new Map();
 
 const getAllNamesInScope = () => {
   return scopes.flatMap((scope) => Array.from(scope.keys()));
-};
-
-const renderSourceLineWithPointer = (location, sourceLines) => {
-  const line = sourceLines[location.start.line - 1] || "";
-  const pointer =
-    " ".repeat(location.start.column) +
-    "^".repeat(Math.max(1, location.end.column - location.start.column));
-
-  return { line, pointer };
 };
 
 const undefinedVariableError = (name, node) => {
@@ -53,17 +38,17 @@ const duplicateDeclarationsError = (name, node1, node2) => {
   return {
     type: "DuplicateDeclarationError",
     name,
-    node1,
+    node: node1,
     node2,
   };
 };
 
-const renderDuplicateDeclarationError = ({ name, node1, node2 }, module) => {
+const renderDuplicateDeclarationError = ({ name, node, node2 }, module) => {
   return E.stack({ spacing: 2 }, [
     E.header("DUPLICATE VARIABLE DECLARATION", module.relativeFilePath),
     E.stack({ spacing: 2 }, [
       E.reflow(`Tried to declare a variable that was already declared:`),
-      E.highlightCode(module.sourceLines[node1.loc.start.line - 1], node1.loc),
+      E.highlightCode(module.sourceLines[node.loc.start.line - 1], node.loc),
       E.reflow(`... but it was already declared here:`),
       E.highlightCode(module.sourceLines[node2.loc.start.line - 1], node2.loc),
     ]),

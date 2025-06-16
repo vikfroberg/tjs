@@ -22,20 +22,76 @@ export function createLanguageServer(options = {}) {
     let dir = workspaceFolder.replace("file://", "");
     connection.console.log(`Compiling ${dir}`);
     let modules = buildFunctions.buildModulesFromDir(dir);
+    
+    // Clear diagnostics for all files first
+    for (const [filePath] of modules) {
+      connection.sendDiagnostics({
+        uri: `file://${filePath}`,
+        diagnostics: []
+      });
+    }
+    
     Result.cata(
       Build.processModules(modules, dir),
-      (ok) => {},
+      (ok) => {
+        // Success - diagnostics already cleared above
+      },
       (error) => {
-        connection.console.log("COMPILE ERROR:")
-        connection.console.log(JSON.stringify(error, null, 2))
-        // connection.sendDiagnostics({
-        //   uri: error.,
-        //   diagnostics: [{
+        if (error.type === 'namecheck') {
+          const { error: namecheckError, module } = error;
+          const diagnostics = [{
+            severity: 1, // Error
+            range: {
+              start: {
+                line: namecheckError.node.loc.start.line - 1,
+                character: namecheckError.node.loc.start.column
+              },
+              end: {
+                line: namecheckError.node.loc.end.line - 1,
+                character: namecheckError.node.loc.end.column
+              }
+            },
+            message: formatErrorAsPlainText(namecheckError, module),
+            source: 'tjs'
+          }];
 
-        //   }]
-        // });
+          connection.sendDiagnostics({
+            uri: `file://${module.absoluteFilePath}`,
+            diagnostics
+          });
+        } else {
+          // Handle unrecognized error types - show as generic diagnostic
+          connection.console.log(`Unhandled error type: ${error.type}`);
+          // For now, just log - we could send a generic diagnostic to the first file if needed
+        }
       }
     );
+  };
+
+  // Helper function to format namecheck errors as plain text
+  let formatErrorAsPlainText = (error, module) => {
+    switch (error.type) {
+      case "UndefinedVariableError":
+        let suggestions = error.suggestions.length > 0
+          ? `\n\nDid you mean: ${error.suggestions.slice(0, 3).join(', ')}`
+          : '';
+        return `Undefined variable: '${error.name}'\n\nTried to reference a variable that doesn't exist.${suggestions}`;
+
+      case "DuplicateDeclarationError":
+        return `Duplicate declaration: '${error.name}'\n\nVariable was already declared at line ${error.node2.loc.start.line}.`;
+
+      case "NameNotExportedError":
+        let exports = error.availableExports.length > 0
+          ? `\n\nAvailable exports: ${error.availableExports.join(', ')}`
+          : '';
+        return `Import error: Variable not exported from module\n\nModule: ${error.importNode.resolvedModulePath}${exports}`;
+
+      case "UnsupportedError":
+        return `Unsupported feature\n\nThis language feature is not currently supported by TJS.`;
+
+      default:
+        return `Unknown error type: ${error.type}\n\nUnrecognized error type encountered.\n\n${JSON.stringify(error, null, 2)}`;
+    }
   };
 
   // Initialize server capabilities
@@ -62,9 +118,7 @@ export function createLanguageServer(options = {}) {
   });
 
   connection.onInitialized(() => {
-    connection.console.log("Server initialized and ready!");
     for (const folder of workspaceFolders) {
-      connection.console.log(`Workspace folder: ${folder}`);
       recompileAndSendDiagnostics(folder);
     }
   });
@@ -74,10 +128,6 @@ export function createLanguageServer(options = {}) {
     for (const folder of workspaceFolders) {
       recompileAndSendDiagnostics(folder);
     }
-
-
-    connection.console.log(`Document opened: ${event.document.uri}`);
-    connection.console.log(JSON.stringify(event, null, 2))
   });
 
   documents.onDidClose((event) => {
@@ -95,27 +145,96 @@ export function createLanguageServer(options = {}) {
 
     connection.console.log("=> onDidChangeContent");
     connection.console.log(`Document URI: ${document.uri}`);
+    connection.console.log(`Document text length: ${text.length}`);
+    connection.console.log(`Workspace folders: ${Array.from(workspaceFolders).join(', ')}`);
 
-    // try {
-    //     // Use your typechecker here
-    //     const result = await typeChecker.check(text, document.uri);
-
-    //     // Convert your typechecker errors to LSP diagnostics
-    //     const diagnostics = result.errors.map(error => ({
-    //         severity: error.severity === 'error' ? 1 : 2, // Error or Warning
-    //         range: {
-    //             start: { line: error.line - 1, character: error.column - 1 },
-    //             end: { line: error.endLine - 1, character: error.endColumn - 1 }
-    //         },
-    //         message: error.message,
-    //         source: 'my-typechecker'
-    //     }));
-
-    //     connection.sendDiagnostics({ uri: document.uri, diagnostics });
-    // } catch (error) {
-    //     console.error('Typechecker error:', error);
-    // }
+    // @todo: Only recompile relevant workspace folder for the opened document
+    for (const folder of workspaceFolders) {
+      connection.console.log(`Processing folder: ${folder}`);
+      recompileAndSendDiagnosticsWithInMemoryContent(folder);
+    }
   });
+
+  // Version that uses in-memory document content instead of reading from disk
+  let recompileAndSendDiagnosticsWithInMemoryContent = (workspaceFolder) => {
+    let dir = workspaceFolder.replace("file://", "");
+    connection.console.log(`Compiling ${dir} with in-memory content`);
+    
+    // Get modules from disk first
+    let modules = buildFunctions.buildModulesFromDir(dir);
+    
+    // Override with in-memory content for any open documents
+    for (const [filePath, module] of modules) {
+      const uri = `file://${filePath}`;
+      const document = documents.get(uri);
+      if (document) {
+        const inMemorySource = document.getText();
+        try {
+          // Re-create the module with in-memory content
+          const importResolver = Build.createImportResolver((path) => modules.has(path));
+          const updatedModule = Build.createModuleFromSource(inMemorySource, filePath, dir, importResolver);
+          modules.set(filePath, updatedModule);
+        } catch (parseError) {
+          // Parse error - skip this module, clear its diagnostics, and continue
+          connection.console.log(`Parse error in ${filePath}: ${parseError.message}`);
+          connection.sendDiagnostics({
+            uri: `file://${filePath}`,
+            diagnostics: []
+          });
+          // Remove this module from processing since it can't be parsed
+          modules.delete(filePath);
+        }
+      }
+    }
+    
+    // Clear diagnostics for all files first
+    for (const [filePath] of modules) {
+      connection.sendDiagnostics({
+        uri: `file://${filePath}`,
+        diagnostics: []
+      });
+    }
+    
+    try {
+      Result.cata(
+        Build.processModules(modules, dir),
+        (ok) => {
+          // Success - diagnostics already cleared above
+        },
+        (error) => {
+          if (error.type === 'namecheck') {
+            const { error: namecheckError, module } = error;
+            const diagnostics = [{
+              severity: 1, // Error
+              range: {
+                start: {
+                  line: namecheckError.node.loc.start.line - 1,
+                  character: namecheckError.node.loc.start.column
+                },
+                end: {
+                  line: namecheckError.node.loc.end.line - 1,
+                  character: namecheckError.node.loc.end.column
+                }
+              },
+              message: formatErrorAsPlainText(namecheckError, module),
+              source: 'tjs'
+            }];
+
+            connection.sendDiagnostics({
+              uri: `file://${module.absoluteFilePath}`,
+              diagnostics
+            });
+          } else {
+            // Handle unrecognized error types - show as generic diagnostic
+            connection.console.log(`Unhandled error type: ${error.type}`);
+          }
+        }
+      );
+    } catch (processingError) {
+      connection.console.log(`Error during module processing: ${processingError.message}`);
+      // Don't crash the server, just log the error
+    }
+  };
 
   // Provide hover information
   connection.onHover(async (params) => {
